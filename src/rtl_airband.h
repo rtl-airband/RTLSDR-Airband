@@ -66,14 +66,15 @@
 
 #ifdef NFM
 #define WAVE_RATE 16000
+#define MP3_RATE 16000
 #else
 #define WAVE_RATE 8000
+#define MP3_RATE 8000
 #endif /* NFM */
 
 #define WAVE_BATCH WAVE_RATE / 8
 #define AGC_EXTRA 100
 #define WAVE_LEN 2 * WAVE_BATCH + AGC_EXTRA
-#define MP3_RATE 8000
 #define MAX_SHOUT_QUEUELEN 32768
 #define TAG_QUEUE_LEN 16
 
