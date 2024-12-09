@@ -317,6 +317,11 @@ static void close_file(channel_t* channel, file_data* fdata) {
         return;
     }
 
+    FILE* duration_log = fopen("/var/log/rtl_airband/duration.log", "a");
+    if (!duration_log) {
+        log(LOG_WARNING, "Could not open duration log file: %s\n", strerror(errno));
+    }
+
     if (fdata->type == O_FILE && fdata->f && channel->lame) {
         int encoded = lame_encode_flush_nogap(channel->lame, channel->lamebuf, LAMEBUF_SIZE);
         debug_print("closing file %s flushed %d\n", fdata->file_path.c_str(), encoded);
@@ -329,25 +334,83 @@ static void close_file(channel_t* channel, file_data* fdata) {
     }
 
     if (fdata->f) {
+        long file_size = 0;
+        fseek(fdata->f, 0L, SEEK_END);
+        file_size = ftell(fdata->f);
+        
         fclose(fdata->f);
         fdata->f = NULL;
-        rename_if_exists(fdata->file_path_tmp.c_str(), fdata->file_path.c_str());
+        
+        if (fdata->split_on_transmission) {
+            timeval current_time;
+            gettimeofday(&current_time, NULL);
+            double duration_sec = delta_sec(&fdata->open_time, &current_time);
+            double idle_sec = delta_sec(&fdata->last_write_time, &current_time);
+            double actual_duration = duration_sec - idle_sec;
+            
+            char timestamp[32];
+            if (use_localtime) {
+                strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&current_time.tv_sec));
+            } else {
+                strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", gmtime(&current_time.tv_sec));
+            }
+
+            bool meets_duration = actual_duration >= fdata->minimum_transmission_sec;
+            bool meets_size = file_size >= 2000;
+
+            bool keep_file = meets_duration && meets_size;
+
+            const char* reason;
+            if (!meets_duration) reason = "Audio duration too short";
+            else if (!meets_size) reason = "File too small (likely no audio content)";
+            else reason = "Meets requirements";
+
+            if (duration_log) {
+                fprintf(duration_log, "%s - File: %s\n"
+                    "\tTotal Duration: %.3f seconds\n"
+                    "\tActive Duration: %.3f seconds (min: %.1f) - %s\n"
+                    "\tIdle Time: %.3f seconds (max: %.1f)\n"
+                    "\tFile Size: %ld bytes (min: 2000) - %s\n"
+                    "\tAction: %s\n"
+                    "\tReason: %s\n\n",
+                    timestamp,
+                    fdata->file_path_tmp.c_str(),
+                    duration_sec,
+                    actual_duration,
+                    fdata->minimum_transmission_sec,
+                    meets_duration ? "PASS" : "FAIL",
+                    idle_sec,
+                    fdata->transmission_delay_sec,
+                    file_size,
+                    meets_size ? "PASS" : "FAIL",
+                    keep_file ? "KEPT" : "DELETED",
+                    reason
+                );
+                fclose(duration_log);
+            }
+
+            if (keep_file) {
+                log(LOG_INFO, "Keeping file: %s (active duration %.3f sec, idle %.3f sec, size %ld bytes)\n", 
+                    fdata->file_path_tmp.c_str(), actual_duration, idle_sec, file_size);
+                rename_if_exists(fdata->file_path_tmp.c_str(), fdata->file_path.c_str());
+            } else {
+                log(LOG_INFO, "Deleting file: %s (%s)\n", 
+                    fdata->file_path_tmp.c_str(), reason);
+                if (unlink(fdata->file_path_tmp.c_str()) != 0) {
+                    log(LOG_WARNING, "Failed to delete file %s: %s\n", 
+                        fdata->file_path_tmp.c_str(), strerror(errno));
+                }
+            }
+        } else {
+            rename_if_exists(fdata->file_path_tmp.c_str(), fdata->file_path.c_str());
+        }
     }
     fdata->file_path.clear();
     fdata->file_path_tmp.clear();
 }
 
-/*
- * Close current output file based on certain conditions:
- * If "split_on_transmission" mode is true check:
- *   If current duration too long, or we've been idle too long
- * else (append or continuous) check:
- *   if hour is different.
- */
 static void close_if_necessary(channel_t* channel, file_data* fdata) {
-    static const double MIN_TRANSMISSION_TIME_SEC = 1.0;
     static const double MAX_TRANSMISSION_TIME_SEC = 60.0 * 60.0;
-    static const double MAX_TRANSMISSION_IDLE_SEC = 0.5;
 
     if (!fdata || !fdata->f) {
         return;
@@ -360,15 +423,32 @@ static void close_if_necessary(channel_t* channel, file_data* fdata) {
         double duration_sec = delta_sec(&fdata->open_time, &current_time);
         double idle_sec = delta_sec(&fdata->last_write_time, &current_time);
 
-        if (duration_sec > MAX_TRANSMISSION_TIME_SEC || (duration_sec > MIN_TRANSMISSION_TIME_SEC && idle_sec > MAX_TRANSMISSION_IDLE_SEC)) {
-            debug_print("closing file %s, duration %f sec, idle %f sec\n", fdata->file_path.c_str(), duration_sec, idle_sec);
+        // Check file size if we have no signal
+        if (channel->axcindicate == NO_SIGNAL) {
+            long file_size = 0;
+            fseek(fdata->f, 0L, SEEK_END);
+            file_size = ftell(fdata->f);
+            fseek(fdata->f, 0L, SEEK_SET);
+
+            if (file_size < 2000 && idle_sec >= fdata->transmission_delay_sec) {
+                debug_print("closing empty file %s: size %ld bytes after %.3f sec idle\n", 
+                    fdata->file_path.c_str(), file_size, idle_sec);
+                close_file(channel, fdata);
+                return;
+            }
+        }
+
+        if (duration_sec > MAX_TRANSMISSION_TIME_SEC || 
+            (duration_sec > fdata->minimum_transmission_sec && 
+             idle_sec > fdata->transmission_delay_sec)) {
+            debug_print("closing file %s, duration %.3f sec, idle %.3f sec\n", 
+                fdata->file_path.c_str(), duration_sec, idle_sec);
             close_file(channel, fdata);
         }
         return;
     }
 
-    // Check if the hour boundary was just crossed.  NOTE: Actual hour number doesn't matter but still
-    // need to use localtime if enabled (some timezones have partial hour offsets)
+    // Hour boundary check remains unchanged
     int start_hour;
     int current_hour;
     if (use_localtime) {
