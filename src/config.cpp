@@ -116,6 +116,34 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
             fdata->append = (!outs[o].exists("append")) || (bool)(outs[o]["append"]);
             fdata->split_on_transmission = outs[o].exists("split_on_transmission") ? (bool)(outs[o]["split_on_transmission"]) : false;
             fdata->include_freq = outs[o].exists("include_freq") ? (bool)(outs[o]["include_freq"]) : false;
+
+            // Add reading of timing parameters with defaults
+            if (outs[o].exists("minimum_transmission_sec")) {
+                if (outs[o]["minimum_transmission_sec"].getType() == libconfig::Setting::TypeFloat) {
+                    fdata->minimum_transmission_sec = (double)outs[o]["minimum_transmission_sec"];
+                } else if (outs[o]["minimum_transmission_sec"].getType() == libconfig::Setting::TypeInt) {
+                    fdata->minimum_transmission_sec = (double)((int)outs[o]["minimum_transmission_sec"]);
+                } else {
+                    cerr << "Configuration error: minimum_transmission_sec must be a number\n";
+                    error();
+                }
+            } else {
+                fdata->minimum_transmission_sec = 1.5;  // default
+            }
+
+            if (outs[o].exists("transmission_delay_sec")) {
+                if (outs[o]["transmission_delay_sec"].getType() == libconfig::Setting::TypeFloat) {
+                    fdata->transmission_delay_sec = (double)outs[o]["transmission_delay_sec"];
+                } else if (outs[o]["transmission_delay_sec"].getType() == libconfig::Setting::TypeInt) {
+                    fdata->transmission_delay_sec = (double)((int)outs[o]["transmission_delay_sec"]);
+                } else {
+                    cerr << "Configuration error: transmission_delay_sec must be a number\n";
+                    error();
+                }
+            } else {
+                fdata->transmission_delay_sec = 1.0;  // default
+            }
+
             channel->need_mp3 = 1;
 
             if (fdata->split_on_transmission) {
