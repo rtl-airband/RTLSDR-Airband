@@ -263,7 +263,7 @@ static int open_file(file_data* fdata, mix_modes mixmode, int is_audio) {
             debug_print("Writing to %s\n", fdata->file_path_tmp.c_str());
         }
         if (is_audio) { //insert some silence at the beginning of a new file
-            LameTone lt_silence(mixmode, 50);.
+            LameTone lt_silence(mixmode, 50);
             int r = lt_silence.write(fdata->f);
             if (r < 0) fseek(fdata->f, st.st_size, SEEK_SET);
         }
