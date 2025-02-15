@@ -105,6 +105,7 @@ enum output_type {
     O_ICECAST,
     O_FILE,
     O_RAWFILE,
+    O_FIFOFILE,
     O_MIXER,
     O_UDP_STREAM
 #ifdef WITH_PULSEAUDIO

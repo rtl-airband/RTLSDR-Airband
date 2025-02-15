@@ -159,6 +159,36 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: can't have both continuous and split_on_transmission\n";
                 error();
             }
+        } else if (!strncmp(outs[o]["type"], "fifofile", 8)) { // TODO: review rawfile and fifofile and add another conditional to reduce code duplication
+            if (parsing_mixers) {  // fifofile outputs not allowed for mixers
+                cerr << "Configuration error: mixers.[" << i << "] outputs[" << o << "]: fifofile output is not allowed for mixers\n";
+                error();
+            }
+            channel->outputs[oo].data = XCALLOC(1, sizeof(struct file_data));
+            channel->outputs[oo].type = O_FIFOFILE;
+            file_data* fdata = (file_data*)(channel->outputs[oo].data);
+
+            fdata->type = O_FIFOFILE;
+            if (!outs[o].exists("directory") || !outs[o].exists("filename_template")) {
+                cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: both directory and filename_template required for file\n";
+                error();
+            }
+
+            fdata->basedir = outs[o]["directory"].c_str();
+            fdata->basename = outs[o]["filename_template"].c_str();
+            fdata->dated_subdirectories = outs[o].exists("dated_subdirectories") ? (bool)(outs[o]["dated_subdirectories"]) : false;
+            fdata->suffix = ".fifo";
+
+            fdata->continuous = outs[o].exists("continuous") ? (bool)(outs[o]["continuous"]) : false;
+            fdata->append = (!outs[o].exists("append")) || (bool)(outs[o]["append"]);
+            fdata->split_on_transmission = outs[o].exists("split_on_transmission") ? (bool)(outs[o]["split_on_transmission"]) : false;
+            fdata->include_freq = outs[o].exists("include_freq") ? (bool)(outs[o]["include_freq"]) : false;
+            channel->needs_raw_iq = channel->has_iq_outputs = 1;
+
+            if (fdata->continuous && fdata->split_on_transmission) {
+                cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: can't have both continuous and split_on_transmission\n";
+                error();
+            }
         } else if (!strncmp(outs[o]["type"], "mixer", 5)) {
             if (parsing_mixers) {  // mixer outputs not allowed for mixers
                 cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: mixer output is not allowed for mixers\n";
