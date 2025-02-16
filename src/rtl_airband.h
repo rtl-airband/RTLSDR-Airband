@@ -105,6 +105,7 @@ enum output_type {
     O_ICECAST,
     O_FILE,
     O_RAWFILE,
+    O_FIFOFILE,
     O_MIXER,
     O_UDP_STREAM
 #ifdef WITH_PULSEAUDIO
@@ -143,6 +144,7 @@ struct file_data {
     timeval open_time;
     timeval last_write_time;
     FILE* f;
+    int fd;   // File descriptor for FIFO
     enum output_type type;
 };
 

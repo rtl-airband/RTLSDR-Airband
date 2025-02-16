@@ -52,6 +52,7 @@
 #include "helper_functions.h"
 #include "input-common.h"
 #include "rtl_airband.h"
+#include <fcntl.h>
 
 void shout_setup(icecast_data* icecast, mix_modes mixmode) {
     int ret;
@@ -250,7 +251,16 @@ int rename_if_exists(char const* oldpath, char const* newpath) {
  */
 static int open_file(file_data* fdata, mix_modes mixmode, int is_audio) {
     int rename_result = rename_if_exists(fdata->file_path.c_str(), fdata->file_path_tmp.c_str());
-    fdata->f = fopen(fdata->file_path_tmp.c_str(), fdata->append ? "a+" : "w");
+    if (fdata->type == O_FIFOFILE) {
+      fdata->fd = open(fdata->file_path_tmp.c_str(), O_WRONLY | O_NONBLOCK);
+      if (fdata->fd == -1){
+          perror("open");
+          return -1;
+      }
+      fdata->f = fdopen(fdata->fd, "w");
+    } else {
+        fdata->f = fopen(fdata->file_path_tmp.c_str(), fdata->append ? "a+" : "w");
+    }
     if (fdata->f == NULL) {
         return -1;
     }
@@ -433,15 +443,23 @@ static bool output_file_ready(channel_t* channel, file_data* fdata, mix_modes mi
 
     // use a string stream to build the output filepath
     std::stringstream ss;
-    ss << output_dir << '/' << fdata->basename << timestamp;
+    ss << output_dir << '/' << fdata->basename;
+    if (fdata->type != O_FIFOFILE) {
+      ss << output_dir << '/' << timestamp;
+    }
     if (fdata->include_freq) {
         ss << '_' << channel->freqlist[channel->freq_idx].frequency;
     }
-    ss << fdata->suffix;
+    if (fdata->type != O_FIFOFILE) {
+      ss << fdata->suffix;
+    }
     fdata->file_path = ss.str();
 
-    fdata->file_path_tmp = fdata->file_path + ".tmp";
-
+    if (fdata->type == O_FIFOFILE) {
+      fdata->file_path_tmp = fdata->file_path;
+    } else {
+      fdata->file_path_tmp = fdata->file_path + ".tmp";
+    }
     fdata->open_time = fdata->last_write_time = current_time;
 
     if (open_file(fdata, mixmode, is_audio) < 0) {
@@ -495,7 +513,7 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
                 }
                 shout_metadata_free(meta);
             }
-        } else if (channel->outputs[k].type == O_FILE || channel->outputs[k].type == O_RAWFILE) {
+        } else if (channel->outputs[k].type == O_FILE || channel->outputs[k].type == O_RAWFILE || channel->outputs[k].type == O_FIFOFILE) {
             file_data* fdata = (file_data*)(channel->outputs[k].data);
 
             if (fdata->continuous == false && channel->axcindicate == NO_SIGNAL && channel->outputs[k].active == false) {
@@ -506,12 +524,17 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
             if (channel->outputs[k].type == O_FILE && mp3_bytes <= 0)
                 continue;
 
-            if (!output_file_ready(channel, fdata, channel->mode, (channel->outputs[k].type == O_RAWFILE ? 0 : 1))) {
+            if (!output_file_ready(channel, fdata, channel->mode, (channel->outputs[k].type == O_RAWFILE ? 0 : 1))) { //TODO: This needs repairing
+                  log(LOG_WARNING, "Output disabled\n");
+                  channel->outputs[k].enabled = false;
+                  continue;
+            };
+            if (!output_file_ready(channel, fdata, channel->mode, (channel->outputs[k].type == O_FIFOFILE ? 0 : 1))) { //TODO: This needs repairing
                 log(LOG_WARNING, "Output disabled\n");
                 channel->outputs[k].enabled = false;
                 continue;
             };
-
+  
             size_t buflen = 0, written = 0;
             if (channel->outputs[k].type == O_FILE) {
                 buflen = (size_t)mp3_bytes;
@@ -519,6 +542,21 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
             } else if (channel->outputs[k].type == O_RAWFILE) {
                 buflen = 2 * sizeof(float) * WAVE_BATCH;
                 written = fwrite(channel->iq_out, 1, buflen, fdata->f);
+            } else if (channel->outputs[k].type == O_FIFOFILE) {
+                buflen = 2 * sizeof(float) * WAVE_BATCH;
+                fd_set write_fds;
+                FD_ZERO(&write_fds);
+                FD_SET(fdata->fd, &write_fds);
+                int ret = select(fdata->fd + 1, NULL, &write_fds, NULL, NULL);
+                if (ret == -1) {
+                    log(LOG_ERR, "Error checking for reader on %s", fdata->file_path.c_str());
+                    close(fdata->fd);
+                }
+                if (FD_ISSET(fdata->fd, &write_fds)) {
+                  written = fwrite(channel->iq_out, 1, buflen, fdata->f);
+                } else {
+                    log(LOG_WARNING, "No listener on %s", fdata->file_path.c_str());
+                }
             }
             if (written < buflen) {
                 if (ferror(fdata->f))
@@ -570,7 +608,7 @@ void disable_channel_outputs(channel_t* channel) {
             shout_close(icecast->shout);
             shout_free(icecast->shout);
             icecast->shout = NULL;
-        } else if (output->type == O_FILE || output->type == O_RAWFILE) {
+        } else if (output->type == O_FILE || output->type == O_RAWFILE|| output->type == O_FIFOFILE) {
             file_data* fdata = (file_data*)(channel->outputs[k].data);
             close_file(channel, fdata);
         } else if (output->type == O_MIXER) {
