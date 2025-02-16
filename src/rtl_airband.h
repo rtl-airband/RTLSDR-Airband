@@ -144,6 +144,7 @@ struct file_data {
     timeval open_time;
     timeval last_write_time;
     FILE* f;
+    int fd;   // File descriptor for FIFO
     enum output_type type;
 };
 

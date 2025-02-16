@@ -52,6 +52,7 @@
 #include "helper_functions.h"
 #include "input-common.h"
 #include "rtl_airband.h"
+#include <fcntl.h>
 
 void shout_setup(icecast_data* icecast, mix_modes mixmode) {
     int ret;
@@ -250,7 +251,16 @@ int rename_if_exists(char const* oldpath, char const* newpath) {
  */
 static int open_file(file_data* fdata, mix_modes mixmode, int is_audio) {
     int rename_result = rename_if_exists(fdata->file_path.c_str(), fdata->file_path_tmp.c_str());
-    fdata->f = fopen(fdata->file_path_tmp.c_str(), fdata->append ? "a+" : "w");
+    if (fdata->type == O_FIFOFILE) {
+      fdata->fd = open(fdata->file_path_tmp.c_str(), O_WRONLY | O_NONBLOCK);
+      if (fdata->fd == -1){
+          perror("open");
+          return -1;
+      }
+      fdata->f = fdopen(fdata->fd, "w");
+    } else {
+        fdata->f = fopen(fdata->file_path_tmp.c_str(), fdata->append ? "a+" : "w");
+    }
     if (fdata->f == NULL) {
         return -1;
     }
@@ -529,9 +539,24 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
             if (channel->outputs[k].type == O_FILE) {
                 buflen = (size_t)mp3_bytes;
                 written = fwrite(channel->lamebuf, 1, buflen, fdata->f);
-            } else if ((channel->outputs[k].type == O_RAWFILE) || (channel->outputs[k].type == O_FIFOFILE)) {
+            } else if (channel->outputs[k].type == O_RAWFILE) {
                 buflen = 2 * sizeof(float) * WAVE_BATCH;
                 written = fwrite(channel->iq_out, 1, buflen, fdata->f);
+            } else if (channel->outputs[k].type == O_FIFOFILE) {
+                buflen = 2 * sizeof(float) * WAVE_BATCH;
+                fd_set write_fds;
+                FD_ZERO(&write_fds);
+                FD_SET(fdata->fd, &write_fds);
+                int ret = select(fdata->fd + 1, NULL, &write_fds, NULL, NULL);
+                if (ret == -1) {
+                    log(LOG_ERR, "Error checking for reader on %s", fdata->file_path.c_str());
+                    close(fdata->fd);
+                }
+                if (FD_ISSET(fdata->fd, &write_fds)) {
+                  written = fwrite(channel->iq_out, 1, buflen, fdata->f);
+                } else {
+                    log(LOG_WARNING, "No listener on %s", fdata->file_path.c_str());
+                }
             }
             if (written < buflen) {
                 if (ferror(fdata->f))
