@@ -456,7 +456,6 @@ static bool output_file_ready(channel_t* channel, file_data* fdata, mix_modes mi
         log(LOG_WARNING, "Cannot open output file %s (%s)\n", fdata->file_path_tmp.c_str(), strerror(errno));
         return false;
     }
-    log(LOG_NOTICE, "Opened tmp output file %s \n", fdata->file_path_tmp.c_str());
 
     return true;
 }
@@ -515,12 +514,17 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
             if (channel->outputs[k].type == O_FILE && mp3_bytes <= 0)
                 continue;
 
+            if (!output_file_ready(channel, fdata, channel->mode, (channel->outputs[k].type == O_RAWFILE ? 0 : 1))) { //TODO: This needs repairing
+                  log(LOG_WARNING, "Output disabled\n");
+                  channel->outputs[k].enabled = false;
+                  continue;
+            };
             if (!output_file_ready(channel, fdata, channel->mode, (channel->outputs[k].type == O_FIFOFILE ? 0 : 1))) { //TODO: This needs repairing
                 log(LOG_WARNING, "Output disabled\n");
                 channel->outputs[k].enabled = false;
                 continue;
             };
-
+  
             size_t buflen = 0, written = 0;
             if (channel->outputs[k].type == O_FILE) {
                 buflen = (size_t)mp3_bytes;
