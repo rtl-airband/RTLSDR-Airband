@@ -1,9 +1,11 @@
 # RTLSDR-Airband
 
-![main](https://github.com/charlie-foxtrot/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main)
-![main](https://github.com/charlie-foxtrot/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main)
-![main](https://github.com/charlie-foxtrot/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)
-![main](https://github.com/charlie-foxtrot/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main)
+![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main)
+![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main)
+![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)
+![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main)
+
+NOTE: Repo URL has moved to https://github.com/rtl-airband/RTLSDR-Airband see [#502](https://github.com/rtl-airband/RTLSDR-Airband/discussions/502) for info
 
 NOTE: Changes as of v5.0.0:
  - PRs will be opened directly against `main` and the `unstable` branch will no longer be used
@@ -11,9 +13,9 @@ NOTE: Changes as of v5.0.0:
  - A release will be created on each `major` or `minor` version tag but not `minor` tags
  - Checking out `main` is recommended over using a release artifact to stay on the latest version
  - This repo has significantly diverged from the original project [microtony/RTLSDR-Airband](https://github.com/microtony/RTLSDR-Airband) so it has been been detached (ie no longer a fork).
- - Specific build support for `rpiv1`, `armv7-generic`, and `armv8-generic` have been deprecated for the new default `native`, see [#447](https://github.com/charlie-foxtrot/RTLSDR-Airband/discussions/447)
+ - Specific build support for `rpiv1`, `armv7-generic`, and `armv8-generic` have been deprecated for the new default `native`, see [#447](https://github.com/rtl-airband/RTLSDR-Airband/discussions/447)
 
-NOTE: Repo URL has moved to https://github.com/charlie-foxtrot/RTLSDR-Airband see [#342](https://github.com/charlie-foxtrot/RTLSDR-Airband/discussions/342) for info
+NOTE: Repo URL has moved to https://github.com/rtl-airband/RTLSDR-Airband see [#342](https://github.com/rtl-airband/RTLSDR-Airband/discussions/342) for info
 
 ## Overview
 
@@ -26,7 +28,7 @@ radios are now supported as well.
 
 ## Documentation
 
-User's manual is now on the [wiki](https://github.com/charlie-foxtrot/RTLSDR-Airband/wiki).
+User's manual is now on the [wiki](https://github.com/rtl-airband/RTLSDR-Airband/wiki).
 
 ## Credits and thanks
 
@@ -41,16 +43,16 @@ of RTLSDR-Airband. Special thanks go to:
 
 ## License
 
-Copyright (C) 2022-2024 charlie-foxtrot
+Copyright (C) 2022-2025 charlie-foxtrot
 
 Copyright (C) 2015-2022 Tomasz Lemiech <szpajder@gmail.com>
 
 Based on original work by Wong Man Hang <microtony@gmail.com>
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -58,7 +60,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+along with this program; if not, see <https://www.gnu.org/licenses/>.
 
 ## Open Source Licenses of bundled code
 

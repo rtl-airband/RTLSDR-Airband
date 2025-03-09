@@ -194,7 +194,7 @@ set(WITH_BCM_VC FALSE)
 
 # error out on depricated PLATFORM values
 if(PLATFORM STREQUAL "rpiv1" OR PLATFORM STREQUAL "armv7-generic" OR PLATFORM STREQUAL "armv8-generic")
-	message(FATAL_ERROR "platform '${PLATFORM}' has been deprecated, see https://github.com/charlie-foxtrot/RTLSDR-Airband/discussions/447")
+	message(FATAL_ERROR "platform '${PLATFORM}' has been deprecated, see https://github.com/rtl-airband/RTLSDR-Airband/discussions/447")
 # rpiv2 - Raspberry Pi 2 or Raspberry Pi 3 using Broadcom VideoCore IV GPU for FFT
 # NOTE: use 'native' to not use the GPU for FFT
 elseif(PLATFORM STREQUAL "rpiv2")

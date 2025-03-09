@@ -1,6 +1,6 @@
 [Unit]
 Description=SDR AM/NFM demodulator
-Documentation=https://github.com/charlie-foxtrot/RTLSDR-Airband/wiki
+Documentation=https://github.com/rtl-airband/RTLSDR-Airband/wiki
 Wants=network.target
 After=network.target
 

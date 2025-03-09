@@ -4,11 +4,11 @@ This file will no longer be updated with each release, for changes between relea
 
 Version 5.0.0 (Jan 21, 2024):
 
-* NOTE: Going forward a release tag will be automatically created on each merge to `main`, and changes will not be reflected in this file.  For changes between versions see the repo's [release history](https://github.com/charlie-foxtrot/RTLSDR-Airband/releases).
+* NOTE: Going forward a release tag will be automatically created on each merge to `main`, and changes will not be reflected in this file.  For changes between versions see the repo's [release history](https://github.com/rtl-airband/RTLSDR-Airband/releases).
 * NOTE: Going forward PRs will be opened directly against `main` and the `unstable` branch will no longer be used.
 * NOTE: This repo has significantly diverged from the original project [microtony/RTLSDR-Airband](https://github.com/microtony/RTLSDR-Airband) so it has been been detached (ie no longer a fork).
 
-* Changes in this release, see [#444](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/444):
+* Changes in this release, see [#444](https://github.com/rtl-airband/RTLSDR-Airband/pull/444):
   * build and publish docker containers
   * changes to supported `cmake` platforms:
     * depreciate `rpiv1`, `armv7-generic`, and `armv8-generic` and build platforms
@@ -22,23 +22,23 @@ Version 5.0.0 (Jan 21, 2024):
 Version 4.2.0 (Oct 13, 2023):
 
 * Changes in this release:
-  * Add support for building with libshout v2.4.6, see [#382](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/382) and [#422](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/422)
-  * Add error checking for lowpass <= highpass, see [#399](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/399) and [#412](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/412)
-  * Remove limit on count of mixer inputs (thanks @cdknox), see [#408](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/408)
-  * Add `dated_subdirectories` config option for output files (thanks, @marcin-osowski), see [#413](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/413)
+  * Add support for building with libshout v2.4.6, see [#382](https://github.com/rtl-airband/RTLSDR-Airband/pull/382) and [#422](https://github.com/rtl-airband/RTLSDR-Airband/pull/422)
+  * Add error checking for lowpass <= highpass, see [#399](https://github.com/rtl-airband/RTLSDR-Airband/pull/399) and [#412](https://github.com/rtl-airband/RTLSDR-Airband/pull/412)
+  * Remove limit on count of mixer inputs (thanks @cdknox), see [#408](https://github.com/rtl-airband/RTLSDR-Airband/pull/408)
+  * Add `dated_subdirectories` config option for output files (thanks, @marcin-osowski), see [#413](https://github.com/rtl-airband/RTLSDR-Airband/pull/413)
 
 Version 4.1.1 (May 1, 2023):
 
 * Changes in this release:
-  * Fix build issues when using VideoCore GPU, see [#378](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/378)
+  * Fix build issues when using VideoCore GPU, see [#378](https://github.com/rtl-airband/RTLSDR-Airband/pull/378)
 
 Version 4.1.0 (April 23, 2023):
 
 * Changes in this release:
-  * Add `channel_dbfs_noise_level` and `channel_dbfs_signal_level` to the stats file, see [#355](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/355)
-  * Add squelch support for CTCSS, add `channel_ctcss_counter` and `channel_no_ctcss_counter` to the stats file, see [#368](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/368)
-  * Support `ampfactor` on a per-channel basis (in addition to mixer inputs), see [#369](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/369)
-  * Fix config error messages, see [#371](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/371)
+  * Add `channel_dbfs_noise_level` and `channel_dbfs_signal_level` to the stats file, see [#355](https://github.com/rtl-airband/RTLSDR-Airband/pull/355)
+  * Add squelch support for CTCSS, add `channel_ctcss_counter` and `channel_no_ctcss_counter` to the stats file, see [#368](https://github.com/rtl-airband/RTLSDR-Airband/pull/368)
+  * Support `ampfactor` on a per-channel basis (in addition to mixer inputs), see [#369](https://github.com/rtl-airband/RTLSDR-Airband/pull/369)
+  * Fix config error messages, see [#371](https://github.com/rtl-airband/RTLSDR-Airband/pull/371)
   * Multiple CI / workflow improvements, including:
     * Addition of Dockerfiles and shell scripts for multiple build environments
     * Addition of vscode devcontainer configuration
@@ -48,14 +48,14 @@ Version 4.1.0 (April 23, 2023):
 Version 4.0.3 (Jan 10, 2023):
 
 * Changes in this release:
-  * Add `channel_squelch_level` to stats file, see [#332](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/332)
+  * Add `channel_squelch_level` to stats file, see [#332](https://github.com/rtl-airband/RTLSDR-Airband/pull/332)
   * Support "default" values in lists for `squelch_snr_threshold` and `notch_q`,
-   see [#334](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/334)
-  * Set cmake `ENABLE_EXPORTS` property, see [#339](https://github.com/charlie-foxtrot/RTLSDR-Airband/pull/339)
+   see [#334](https://github.com/rtl-airband/RTLSDR-Airband/pull/334)
+  * Set cmake `ENABLE_EXPORTS` property, see [#339](https://github.com/rtl-airband/RTLSDR-Airband/pull/339)
 
 * Other items to note:
-  * Repo maintainer has changed, see [#342](https://github.com/charlie-foxtrot/RTLSDR-Airband/discussions/342)
-  * Repo URL has moved to https://github.com/charlie-foxtrot/RTLSDR-Airband
+  * Repo maintainer has changed, see [#342](https://github.com/rtl-airband/RTLSDR-Airband/discussions/342)
+  * Repo URL has moved to https://github.com/rtl-airband/RTLSDR-Airband
   * Default branch / Top of Tree has been renamed to `main`
 
 Version 4.0.2 (Dec 26, 2021):
@@ -207,7 +207,7 @@ Version 3.0.0 (Feb 10, 2018):
 * Frequencies in the config can now be expressed in Hz, kHz, MHz or GHz
   for improved readability.
 * Lots of bugfixes.
-* Rewritten documentation on [Github Wiki](https://github.com/szpajder/RTLSDR-Airband/wiki).
+* Rewritten documentation on [Github Wiki](https://github.com/rtl-airband/RTLSDR-Airband/wiki).
 
 Version 2.4.0 (Oct 15, 2017):
 
