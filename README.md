@@ -5,9 +5,12 @@
 ![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)
 ![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main)
 
+Changes as of v5.1.0:
+ - License is now GPLv2 [#503](https://github.com/rtl-airband/RTLSDR-Airband/discussions/503)
+
 NOTE: Repo URL has moved to https://github.com/rtl-airband/RTLSDR-Airband see [#502](https://github.com/rtl-airband/RTLSDR-Airband/discussions/502) for info
 
-NOTE: Changes as of v5.0.0:
+Changes as of v5.0.0:
  - PRs will be opened directly against `main` and the `unstable` branch will no longer be used
  - Version tags will be automatically created on each merge to `main`
  - A release will be created on each `major` or `minor` version tag but not `minor` tags
@@ -15,7 +18,6 @@ NOTE: Changes as of v5.0.0:
  - This repo has significantly diverged from the original project [microtony/RTLSDR-Airband](https://github.com/microtony/RTLSDR-Airband) so it has been been detached (ie no longer a fork).
  - Specific build support for `rpiv1`, `armv7-generic`, and `armv8-generic` have been deprecated for the new default `native`, see [#447](https://github.com/rtl-airband/RTLSDR-Airband/discussions/447)
 
-NOTE: Repo URL has moved to https://github.com/rtl-airband/RTLSDR-Airband see [#342](https://github.com/rtl-airband/RTLSDR-Airband/discussions/342) for info
 
 ## Overview
 
