@@ -124,7 +124,7 @@ void* controller_thread(void* params) {
         } else {
             if (consecutive_squelch_off == 10) {
                 if (log_scan_activity)
-                    log(LOG_INFO, "Activity on %7.3f MHz\n", dev->channels[0].freqlist[i].frequency / 1000000.0);
+                    log(LOG_INFO, "Activity on %7.3f MHz (%s)\n", dev->channels[0].freqlist[i].frequency / 1000000.0, dev->channels[0].freqlist[i].label);
                 if (i != dev->last_frequency) {
                     // squelch has just opened on a new frequency - we might need to update outputs' metadata
                     gettimeofday(&tv, NULL);
