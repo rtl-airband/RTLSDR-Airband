@@ -82,6 +82,7 @@ bool log_scan_activity = false;
 char *stats_filepath = NULL;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
+int stats_update_interval = 15; // Stats update every 15 seconf by default
 
 #ifdef NFM
 float alpha = exp(-1.0f/(WAVE_RATE * 2e-4));
@@ -846,6 +847,10 @@ int main(int argc, char* argv[]) {
 			log_scan_activity = true;
 		if(root.exists("stats_filepath"))
 			stats_filepath = strdup(root["stats_filepath"]);
+        	if (root.exists("stats_update_interval")) {
+            		stats_update_interval = (int)root["stats_update_interval"];
+        	}
+
 #ifdef NFM
 		if(root.exists("tau"))
 			alpha = ((int)root["tau"] == 0 ? 0.0f : exp(-1.0f/(WAVE_RATE * 1e-6 * (int)root["tau"])));

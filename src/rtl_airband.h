@@ -348,6 +348,7 @@ extern volatile int do_exit, device_opened;
 extern float alpha;
 extern device_t *devices;
 extern mixer_t *mixers;
+extern int stats_update_interval;
 
 // util.cpp
 int atomic_inc(volatile int *pv);
