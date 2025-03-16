@@ -835,8 +835,8 @@ void write_stats_file(timeval *last_stats_write) {
 	timeval current_time;
 	gettimeofday(&current_time, NULL);
 
-	static const double STATS_FILE_TIMING = 15.0;
-	if (!do_exit && delta_sec(last_stats_write, &current_time) < STATS_FILE_TIMING) {
+	extern int stats_update_interval;
+	if (!do_exit && delta_sec(last_stats_write, &current_time) < stats_update_interval ) {
 		return;
 	}
 
