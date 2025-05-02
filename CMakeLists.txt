@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.1)
+cmake_minimum_required (VERSION 3.8)
 project (RTLSDR-Airband CXX)
 
 execute_process(COMMAND ${PROJECT_SOURCE_DIR}/scripts/find_version

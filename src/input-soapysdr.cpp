@@ -307,8 +307,17 @@ void* soapysdr_rx_thread(void* ctx) {
         long long timeNs;      // timestamp for receive buffer
         int samples_read = SoapySDRDevice_readStream(sdr, rxStream, bufs, num_elems, &flags, &timeNs, SOAPYSDR_READSTREAM_TIMEOUT_US);
         if (samples_read < 0) {  // when it's negative, it's the error code
-            log(LOG_ERR, "SoapySDR device '%s': readStream failed: %s\n", dev_data->device_string, SoapySDR_errToStr(samples_read));
-            continue;
+            // Check for recoverable overflow/underflow errors
+            if (samples_read == SOAPY_SDR_OVERFLOW || samples_read == SOAPY_SDR_UNDERFLOW) {
+                // Log recoverable errors as warnings
+                log(LOG_WARNING, "SoapySDR device '%s': readStream warning: %s\n", dev_data->device_string, SoapySDR_errToStr(samples_read));
+                continue;  // Try again in the next loop iteration
+            } else {
+                // Treat timeouts and other errors as fatal
+                log(LOG_ERR, "SoapySDR device '%s': readStream failed: %s\n", dev_data->device_string, SoapySDR_errToStr(samples_read));
+                input->state = INPUT_FAILED;  // Mark input as failed on timeout or other errors
+                break;                        // Exit the loop
+            }
         }
         circbuffer_append(input, buf, (size_t)(samples_read * 2 * input->bytes_per_sample));
     }
