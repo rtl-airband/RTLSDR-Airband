@@ -57,7 +57,7 @@ COPY . /workspace/rtlsdr-airband-src
 # install rtlsdr-airband
 RUN cd /workspace/rtlsdr-airband-src && \
     rm -rf build && mkdir build && \
-    VERSION=$(git describe --tags --always --dirty=-dev || echo "unknown") && \
+    VERSION="5.1.1" && \
     cmake -G Ninja -B build -S . -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -D NFM=ON -D MIRISDR=OFF -D PLATFORM=native . && \
     cmake --build build --config Release && \
     mkdir -p /tmp/RTLSDR-Airband/DEBIAN && \
