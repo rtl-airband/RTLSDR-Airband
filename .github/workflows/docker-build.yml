@@ -1,0 +1,38 @@
+name: Build Base Docker Image
+
+on:
+  workflow_dispatch: # Allows manual triggering
+  push:
+    branches:
+      - main # Or whichever branch you want to trigger builds from
+    paths:
+      - 'Dockerfile' # Only trigger on Dockerfile changes for pushes
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} # Use GITHUB_TOKEN for GHCR within the same repo/org
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64 # Specify the target platform
+          tags: ghcr.io/altamar-tech/audio_rs:latest # Set your image tag
+          push: true # Enable pushing to the registry
