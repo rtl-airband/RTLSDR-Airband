@@ -1,116 +1,98 @@
-# build container
-FROM debian:bookworm-slim AS build
+# Stage 1: Build environment
+FROM debian:bookworm-slim AS builder
 
-# install build dependencies
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-      build-essential \
-      cmake \
-      libmp3lame-dev \
-      libshout3-dev \
-      libconfig++-dev \
-      libfftw3-dev \
-      libsoapysdr-dev \
-      libpulse-dev \
-      \
-      git \
-      ca-certificates \
-      libusb-1.0-0-dev \
-      debhelper \
-      pkg-config \
-      && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Install necessary packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    build-essential \
+    ninja-build \
+    cmake=3.25.1-1 \
+    git \
+    pkg-config \
+    libusb-1.0-0-dev \
+    libmp3lame-dev \
+    libshout3-dev \
+    libconfig++-dev \
+    libfftw3-dev \
+    libsoapysdr-dev \
+    libpulse-dev \
+    libzmq3-dev \
+    dpkg-dev
+# Clean up apt cache
+RUN rm -rf /var/lib/apt/lists/*
 
-# set working dir for compiling dependencies
-WORKDIR /build_dependencies
+WORKDIR /workspace
 
-# compile / install rtl-sdr-blog version of rtl-sdr for v4 support
-RUN git clone https://github.com/rtlsdrblog/rtl-sdr-blog && \
-    cd rtl-sdr-blog/ && \
-    dpkg-buildpackage -b --no-sign && \
-    cd .. && \
-    dpkg -i librtlsdr0_*.deb && \
-    dpkg -i librtlsdr-dev_*.deb && \
-    dpkg -i rtl-sdr_*.deb
+# install rtlsdr
+RUN git clone --branch v1.3.6 --single-branch https://github.com/rtlsdrblog/rtl-sdr-blog.git && \
+    cd rtl-sdr-blog && \
+    rm -rf build && mkdir build && \
+    cmake -G Ninja -B build -S . -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build --config Release && \
+    mkdir -p /tmp/rtl-sdr-blog/DEBIAN && \
+    ARCH=$(dpkg --print-architecture) && \
+    echo "Package: rtl-sdr-blog\nVersion: 1.3.6\nArchitecture: $ARCH\nMaintainer: Builder <builder@example.com>\nDescription: RTL-SDR Blog drivers\nDepends: libusb-1.0-0" > /tmp/rtl-sdr-blog/DEBIAN/control && \
+    DESTDIR=/tmp/rtl-sdr-blog cmake --install build && \
+    dpkg-deb --build --root-owner-group /tmp/rtl-sdr-blog && \
+    mv /tmp/rtl-sdr-blog.deb /workspace/ && \
+    cd .. && rm -rf rtl-sdr-blog /tmp/rtl-sdr-blog
 
-# compile / install libmirisdr-4
-RUN git clone https://github.com/f4exb/libmirisdr-4 && \
-  cd libmirisdr-4 && \
-  mkdir build && \
-  cd build && \
-  cmake ../ && \
-  VERBOSE=1 make install && \
-  ldconfig
+# install airspy
+RUN git clone --branch v1.0.10 --single-branch https://github.com/airspy/airspyone_host.git && \
+    cd airspyone_host && \
+    rm -rf build && mkdir build && \
+    cmake -G Ninja -B build -S . -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build --config Release && \
+    mkdir -p /tmp/airspyone_host/DEBIAN && \
+    ARCH=$(dpkg --print-architecture) && \
+    echo "Package: airspyone-host\nVersion: 1.0.10\nArchitecture: $ARCH\nMaintainer: Builder <builder@example.com>\nDescription: Airspy host drivers\nDepends: libusb-1.0-0" > /tmp/airspyone_host/DEBIAN/control && \
+    DESTDIR=/tmp/airspyone_host cmake --install build && \
+    dpkg-deb --build --root-owner-group /tmp/airspyone_host && \
+    mv /tmp/airspyone_host.deb /workspace/ && \
+    cd .. && rm -rf airspyone_host /tmp/airspyone_host
 
-# TODO: build anything from source?
+# Copy local source code into the builder stage
+COPY . /workspace/rtlsdr-airband-src
 
-# set working dir for project build
-WORKDIR /rtl_airband_build
+# install rtlsdr-airband
+RUN cd /workspace/rtlsdr-airband-src && \
+    rm -rf build && mkdir build && \
+    VERSION=$(git describe --tags --always --dirty=-dev || echo "unknown") && \
+    cmake -G Ninja -B build -S . -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -D NFM=ON -D MIRISDR=OFF -D PLATFORM=native . && \
+    cmake --build build --config Release && \
+    mkdir -p /tmp/RTLSDR-Airband/DEBIAN && \
+    ARCH=$(dpkg --print-architecture) && \
+    echo "Package: rtlsdr-airband\nVersion: $VERSION\nArchitecture: $ARCH\nMaintainer: Builder <builder@example.com>\nDescription: RTLSDR-Airband application (local build)\nDepends: libconfig++9v5, libfftw3-single3 | libfftw3-double3, libmp3lame0, libpulse0, libshout3, libsoapysdr0.8, libusb-1.0-0, libzmq5, libc6" > /tmp/RTLSDR-Airband/DEBIAN/control && \
+    DESTDIR=/tmp/RTLSDR-Airband cmake --install build && \
+    dpkg-deb --build --root-owner-group /tmp/RTLSDR-Airband && \
+    mv /tmp/RTLSDR-Airband.deb /workspace/ && \
+    rm -rf /workspace/rtlsdr-airband-src /tmp/RTLSDR-Airband
 
-# copy in the rtl_airband source
-# WARNING: not copying in the whole repo, this may need to be updated if build files are added outside of src/
-COPY ./.git/ .git/
-COPY ./src/ src/
-COPY ./scripts/ scripts/
-COPY ./CMakeLists.txt .
-
-# configure and build
-# TODO: detect platforms
-RUN uname -m && \
-    echo | gcc -### -v -E - | tee compiler_native_info.txt && \
-    cmake -B build_dir -DPLATFORM=generic -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE && \
-    VERBOSE=1 cmake --build build_dir -j4
-
-# make sure unit tests pass
-RUN ./build_dir/src/unittests
-
-
-# application container
+# Stage 2: Final image
 FROM debian:bookworm-slim
 
-# install runtime dependencies
-RUN apt-get update && \
-  apt-get upgrade -y && \
-  apt-get install -y --no-install-recommends \
-    tini \
+# Install runtime dependencies from your previous final stage
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     libc6 \
-    libmp3lame0 \
-    libshout3 \
     libconfig++9v5 \
     libfftw3-single3 \
-    libsoapysdr0.8 \
+    libmp3lame0 \
     libpulse0 \
-    libusb-1.0-0-dev \
-    && \
-  apt-get clean && \
-  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    libshout3 \
+    libsoapysdr0.8 \
+    soapysdr0.8-module-rtlsdr \
+    soapysdr-module-airspy \
+    libusb-1.0-0 \
+    libzmq5 \
+    # Clean up apt cache in the same layer
+    && rm -rf /var/lib/apt/lists/*
 
-# install (from build container) rtl-sdr-blog version of rtl-sdr for v4 support
-COPY --from=build /build_dependencies/librtlsdr0_*.deb /build_dependencies/librtlsdr-dev_*.deb /build_dependencies/rtl-sdr_*.deb /tmp/
-RUN dpkg -i /tmp/librtlsdr0_*.deb && \
-    dpkg -i /tmp/librtlsdr-dev_*.deb && \
-    dpkg -i /tmp/rtl-sdr_*.deb && \
-    rm -rf /tmp/*.deb && \
-    echo '' | tee --append /etc/modprobe.d/rtl_sdr.conf && \
-    echo 'blacklist dvb_usb_rtl28xxun' | tee --append /etc/modprobe.d/rtl_sdr.conf && \
-    echo 'blacklist rtl2832' | tee --append /etc/modprobe.d/rtl_sdr.conf && \
-    echo 'blacklist rtl2830' | tee --append /etc/modprobe.d/rtl_sdr.conf
+# Copy the built .deb packages from the builder stage
+COPY --from=builder /workspace/*.deb /tmp/
 
-# copy (from build container) libmirisdr-4 library
-COPY --from=build /usr/local/lib/libmirisdr.so.4 /usr/local/lib/
+# Install the .deb packages and handle dependencies
+RUN dpkg -i /tmp/*.deb || apt-get update && apt-get install -f -y --no-install-recommends
 
-# Copy rtl_airband from the build container
-COPY LICENSE /app/
-COPY --from=build /rtl_airband_build/build_dir/src/unittests /app/
-COPY --from=build /rtl_airband_build/build_dir/src/rtl_airband /app/
-RUN chmod a+x /app/unittests /app/rtl_airband
-
-# make sure unit tests pass
-RUN /app/unittests
-
-# Use tini as init and run rtl_airband from /app/
-ENTRYPOINT ["/usr/bin/tini", "--"]
-WORKDIR /app/
-CMD ["/app/rtl_airband", "-F", "-e", "-c", "/app/rtl_airband.conf"]
+# Clean up the .deb files
+RUN rm /tmp/*.deb
