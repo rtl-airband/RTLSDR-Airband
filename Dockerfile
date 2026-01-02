@@ -83,7 +83,8 @@ RUN apt-get update && \
     libsoapysdr0.8 \
     libpulse0 \
     libusb-1.0-0-dev \
-    && \
+    ca-certificates \
+  && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
