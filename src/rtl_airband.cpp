@@ -349,9 +349,9 @@ void* demodulate(void* params) {
     // blackman 7
     // the whole matrix is computed
 #ifdef WITH_BCM_VC
-    float ALIGNED32 window[fft_size * 2];
+    float* window = new ALIGNED32 float[fft_size * 2];
 #else
-    float ALIGNED32 window[fft_size];
+    float* window = new ALIGNED32 float[fft_size];
 #endif /* WITH_BCM_VC */
 
     const double a0 = 0.27105140069342f;
