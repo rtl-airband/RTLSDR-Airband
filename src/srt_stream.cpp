@@ -89,18 +89,19 @@ bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len) {
         sdata->pcm_buffer = NULL;
     }
 
+    int len_tmp;
+    int blocking = 0;
+
     sdata->listen_socket = srt_create_socket();
     if (sdata->listen_socket == SRT_INVALID_SOCK) {
         log(LOG_ERR, "srt_stream: socket failed: %s\n", srt_getlasterror_str());
         goto fail;
     }
 
-    int len_tmp = sizeof(sdata->payload_size);
+    len_tmp = sizeof(sdata->payload_size);
     if (srt_getsockopt(sdata->listen_socket, 0, SRTO_PAYLOADSIZE, &sdata->payload_size, &len_tmp) == SRT_ERROR) {
         sdata->payload_size = SRT_LIVE_DEF_PLSIZE;
     }
-
-    int blocking = 0;
     srt_setsockopt(sdata->listen_socket, 0, SRTO_SNDSYN, &blocking, sizeof(blocking));
     srt_setsockopt(sdata->listen_socket, 0, SRTO_RCVSYN, &blocking, sizeof(blocking));
 
