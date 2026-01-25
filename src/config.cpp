@@ -301,6 +301,25 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
             } else {
                 sdata->format = SRT_STREAM_PCM;
             }
+
+            if (outs[o].exists("mode")) {
+                const char* m = outs[o]["mode"];
+                if (!strcmp(m, "live")) {
+                    sdata->srt_mode = SRT_MODE_LIVE;
+                } else if (!strcmp(m, "raw")) {
+                    sdata->srt_mode = SRT_MODE_RAW;
+                } else {
+                    if (parsing_mixers) {
+                        cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: ";
+                    } else {
+                        cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: ";
+                    }
+                    cerr << "invalid SRT mode, must be 'live' or 'raw'\n";
+                    error();
+                }
+            } else {
+                sdata->srt_mode = SRT_MODE_LIVE;
+            }
 #ifdef WITH_PULSEAUDIO
         } else if (!strncmp(outs[o]["type"], "pulse", 5)) {
             channel->outputs[oo].data = XCALLOC(1, sizeof(struct pulse_data));

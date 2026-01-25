@@ -172,6 +172,11 @@ enum srt_stream_format {
     SRT_STREAM_WAV
 };
 
+enum srt_stream_mode {
+    SRT_MODE_LIVE,  // Standard SRT with TSBPD, compatible with all clients
+    SRT_MODE_RAW    // Minimal latency, TSBPD disabled (ffplay only)
+};
+
 struct srt_client {
     SRTSOCKET sock;
     bool header_sent;
@@ -187,6 +192,7 @@ struct srt_stream_data {
     int payload_size;
 
     srt_stream_format format;
+    srt_stream_mode srt_mode;
     mix_modes mode;
 
     bool continuous;

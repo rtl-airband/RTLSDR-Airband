@@ -49,11 +49,12 @@ static void srt_stream_send(srt_stream_data* sdata, const char* data, size_t len
             if (ret == SRT_ERROR) {
                 int serr;
                 srt_getlasterror(&serr);
-                if (serr != SRT_EASYNCSND) {
-                    srt_close(it->sock);
-                    it = sdata->clients.erase(it);
-                    goto next_client;
+                if (serr == SRT_EASYNCSND) {
+                    break; /* Buffer full, drop remaining data for this client */
                 }
+                srt_close(it->sock);
+                it = sdata->clients.erase(it);
+                goto next_client;
             }
             ptr += chunk;
             remaining -= chunk;
@@ -80,7 +81,7 @@ bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len) {
         sdata->stereo_buffer = NULL;
     }
 
-    if (sdata->format == SRT_STREAM_WAV) {
+    if (sdata->format == SRT_STREAM_WAV || sdata->format == SRT_STREAM_PCM) {
         sdata->pcm_buffer_len = (len / sizeof(float)) * (mode == MM_STEREO ? 2 : 1);
         sdata->pcm_buffer = (int16_t*)XCALLOC(sdata->pcm_buffer_len, sizeof(int16_t));
     } else {
@@ -91,7 +92,7 @@ bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len) {
     sdata->listen_socket = srt_create_socket();
     if (sdata->listen_socket == SRT_INVALID_SOCK) {
         log(LOG_ERR, "srt_stream: socket failed: %s\n", srt_getlasterror_str());
-        return false;
+        goto fail;
     }
 
     int len_tmp = sizeof(sdata->payload_size);
@@ -103,11 +104,21 @@ bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len) {
     srt_setsockopt(sdata->listen_socket, 0, SRTO_SNDSYN, &blocking, sizeof(blocking));
     srt_setsockopt(sdata->listen_socket, 0, SRTO_RCVSYN, &blocking, sizeof(blocking));
 
-    /* Disable timestamp-based packet delivery for minimal latency */
-    int tsbpd = 0;
-    srt_setsockopt(sdata->listen_socket, 0, SRTO_TSBPDMODE, &tsbpd, sizeof(tsbpd));
-    int zero = 0;
-    srt_setsockopt(sdata->listen_socket, 0, SRTO_LATENCY, &zero, sizeof(zero));
+    if (sdata->srt_mode == SRT_MODE_LIVE) {
+        /* Standard SRT live mode - compatible with all SRT clients */
+        int yes = 1;
+        srt_setsockopt(sdata->listen_socket, 0, SRTO_TSBPDMODE, &yes, sizeof(yes));
+        srt_setsockopt(sdata->listen_socket, 0, SRTO_TLPKTDROP, &yes, sizeof(yes));
+        srt_setsockopt(sdata->listen_socket, 0, SRTO_NAKREPORT, &yes, sizeof(yes));
+        int latency = 120; /* 120ms default latency for live mode */
+        srt_setsockopt(sdata->listen_socket, 0, SRTO_LATENCY, &latency, sizeof(latency));
+    } else {
+        /* Raw mode - minimal latency, TSBPD disabled (ffplay only) */
+        int tsbpd = 0;
+        srt_setsockopt(sdata->listen_socket, 0, SRTO_TSBPDMODE, &tsbpd, sizeof(tsbpd));
+        int zero = 0;
+        srt_setsockopt(sdata->listen_socket, 0, SRTO_LATENCY, &zero, sizeof(zero));
+    }
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -115,21 +126,32 @@ bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len) {
     addr.sin_port = htons(atoi(sdata->listen_port));
     if (inet_aton(sdata->listen_address, &addr.sin_addr) == 0) {
         log(LOG_ERR, "srt_stream: invalid listen address %s\n", sdata->listen_address);
-        return false;
+        goto fail;
     }
 
     if (srt_bind(sdata->listen_socket, (struct sockaddr*)&addr, sizeof(addr)) == SRT_ERROR) {
         log(LOG_ERR, "srt_stream: bind failed: %s\n", srt_getlasterror_str());
-        return false;
+        goto fail;
     }
     if (srt_listen(sdata->listen_socket, 5) == SRT_ERROR) {
         log(LOG_ERR, "srt_stream: listen failed: %s\n", srt_getlasterror_str());
-        return false;
+        goto fail;
     }
 
     sdata->clients.clear();
     log(LOG_INFO, "srt_stream: listening on %s:%s\n", sdata->listen_address, sdata->listen_port);
     return true;
+
+fail:
+    free(sdata->stereo_buffer);
+    sdata->stereo_buffer = NULL;
+    free(sdata->pcm_buffer);
+    sdata->pcm_buffer = NULL;
+    if (sdata->listen_socket != SRT_INVALID_SOCK) {
+        srt_close(sdata->listen_socket);
+        sdata->listen_socket = SRT_INVALID_SOCK;
+    }
+    return false;
 }
 
 static void srt_stream_send_header(srt_stream_data* sdata, srt_client& client) {
@@ -144,8 +166,8 @@ static void srt_stream_send_header(srt_stream_data* sdata, srt_client& client) {
 
     char header[44];
     memcpy(header, "RIFF", 4);
-    /* use 0 for indefinite length so players avoid warnings */
-    uint32_t sz = 0u;
+    /* use 0xFFFFFFFF for unknown/streaming length per WAV spec */
+    uint32_t sz = 0xFFFFFFFFu;
     memcpy(header + 4, &sz, 4);
     memcpy(header + 8, "WAVEfmt ", 8);
     uint32_t fmt_size = 16;
@@ -181,17 +203,26 @@ static void srt_stream_accept(srt_stream_data* sdata) {
         int blocking = 0;
         srt_setsockopt(s, 0, SRTO_SNDSYN, &blocking, sizeof(blocking));
         srt_setsockopt(s, 0, SRTO_RCVSYN, &blocking, sizeof(blocking));
-        int tsbpd = 0;
-        srt_setsockopt(s, 0, SRTO_TSBPDMODE, &tsbpd, sizeof(tsbpd));
-        int zero = 0;
-        srt_setsockopt(s, 0, SRTO_LATENCY, &zero, sizeof(zero));
+        if (sdata->srt_mode == SRT_MODE_LIVE) {
+            int yes = 1;
+            srt_setsockopt(s, 0, SRTO_TSBPDMODE, &yes, sizeof(yes));
+            srt_setsockopt(s, 0, SRTO_TLPKTDROP, &yes, sizeof(yes));
+            srt_setsockopt(s, 0, SRTO_NAKREPORT, &yes, sizeof(yes));
+            int latency = 120;
+            srt_setsockopt(s, 0, SRTO_LATENCY, &latency, sizeof(latency));
+        } else {
+            int tsbpd = 0;
+            srt_setsockopt(s, 0, SRTO_TSBPDMODE, &tsbpd, sizeof(tsbpd));
+            int zero = 0;
+            srt_setsockopt(s, 0, SRTO_LATENCY, &zero, sizeof(zero));
+        }
         srt_client c{s, false};
         sdata->clients.push_back(c);
     }
 }
 
 void srt_stream_write(srt_stream_data* sdata, const float* data, size_t len) {
-    if (sdata->format == SRT_STREAM_WAV) {
+    if (sdata->format == SRT_STREAM_WAV || sdata->format == SRT_STREAM_PCM) {
         size_t sample_count = len / sizeof(float);
         if (sample_count > sdata->pcm_buffer_len)
             return;
@@ -223,7 +254,7 @@ void srt_stream_write(srt_stream_data* sdata, const float* left, const float* ri
         sdata->stereo_buffer[2 * i] = left[i];
         sdata->stereo_buffer[2 * i + 1] = right[i];
     }
-    if (sdata->format == SRT_STREAM_WAV) {
+    if (sdata->format == SRT_STREAM_WAV || sdata->format == SRT_STREAM_PCM) {
         if (sample_count * 2 > sdata->pcm_buffer_len)
             return;
         for (size_t i = 0; i < sample_count * 2; ++i) {
