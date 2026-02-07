@@ -302,6 +302,12 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 sdata->format = SRT_STREAM_PCM;
             }
 
+            if (outs[o].exists("sample_rate")) {
+                sdata->sample_rate = (int)outs[o]["sample_rate"];
+            } else {
+                sdata->sample_rate = WAVE_RATE;
+            }
+
             if (outs[o].exists("mode")) {
                 const char* m = outs[o]["mode"];
                 if (!strcmp(m, "live")) {

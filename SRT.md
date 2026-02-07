@@ -19,7 +19,7 @@ For low latency playback with ffplay:
 # For mp3 or wav formats (auto-detected):
 ffplay -fflags nobuffer -flags low_delay srt://<host>:<port>
 
-# For pcm format (raw 16-bit signed, mono 8kHz):
+# For pcm format (match the configured sample_rate, default 8kHz mono):
 ffplay -fflags nobuffer -flags low_delay -f s16le -ar 8000 -ac 1 srt://<host>:<port>
 ```
 
@@ -33,6 +33,7 @@ outputs: (
     listen_port = 8890;
     format = "mp3";       # pcm|mp3|wav
     mode = "live";        # live|raw (default: live)
+    sample_rate = 24000;  # optional, default: native (8000 or 16000)
     continuous = true;    # optional, default false
   }
 );
@@ -54,4 +55,14 @@ The `mode` setting controls SRT protocol behavior:
 - `raw` – Minimal latency mode with TSBPD disabled. Only works with lenient
   clients like ffplay/ffmpeg. Use this if you need the absolute lowest
   latency and only use ffplay for playback.
+
+## Sample Rate
+
+The `sample_rate` setting resamples audio output to the specified rate
+using linear interpolation. This applies to `pcm` and `wav` formats only
+(`mp3` uses its own encoding rate).
+
+The default is the native rate (`8000` Hz, or `16000` Hz with NFM).
+Set to `24000` for use with the OpenAI Realtime API which requires
+24 kHz mono 16-bit PCM.
 

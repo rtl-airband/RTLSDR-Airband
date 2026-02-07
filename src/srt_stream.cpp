@@ -15,6 +15,22 @@ static bool srt_initialized = false;
 static void srt_stream_accept(srt_stream_data* sdata);
 static void srt_stream_send_header(srt_stream_data* sdata, srt_client& client);
 
+static size_t resample_linear(const int16_t* in, size_t in_count,
+                              int16_t* out, int in_rate, int out_rate) {
+    size_t out_count = (size_t)((uint64_t)in_count * out_rate / in_rate);
+    for (size_t i = 0; i < out_count; i++) {
+        double pos = (double)i * in_rate / out_rate;
+        size_t idx = (size_t)pos;
+        double frac = pos - idx;
+        if (idx + 1 < in_count) {
+            out[i] = (int16_t)(in[idx] * (1.0 - frac) + in[idx + 1] * frac);
+        } else {
+            out[i] = in[idx];
+        }
+    }
+    return out_count;
+}
+
 static void srt_log_dummy(void*, int, const char*, int, const char*, const char*) {}
 
 static void srt_try_startup() {
@@ -89,6 +105,16 @@ bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len) {
         sdata->pcm_buffer = NULL;
     }
 
+    if (sdata->sample_rate != WAVE_RATE &&
+        (sdata->format == SRT_STREAM_WAV || sdata->format == SRT_STREAM_PCM)) {
+        sdata->resample_buffer_len = sdata->pcm_buffer_len *
+                                     sdata->sample_rate / WAVE_RATE + 1;
+        sdata->resample_buffer = (int16_t*)XCALLOC(sdata->resample_buffer_len, sizeof(int16_t));
+    } else {
+        sdata->resample_buffer_len = 0;
+        sdata->resample_buffer = NULL;
+    }
+
     int len_tmp;
     int blocking = 0;
 
@@ -148,6 +174,8 @@ fail:
     sdata->stereo_buffer = NULL;
     free(sdata->pcm_buffer);
     sdata->pcm_buffer = NULL;
+    free(sdata->resample_buffer);
+    sdata->resample_buffer = NULL;
     if (sdata->listen_socket != SRT_INVALID_SOCK) {
         srt_close(sdata->listen_socket);
         sdata->listen_socket = SRT_INVALID_SOCK;
@@ -160,7 +188,7 @@ static void srt_stream_send_header(srt_stream_data* sdata, srt_client& client) {
         return;
 
     const int channels = (sdata->mode == MM_STEREO) ? 2 : 1;
-    const int sample_rate = WAVE_RATE;
+    const int sample_rate = sdata->sample_rate;
     const int bits_per_sample = 16;
     uint32_t byte_rate = sample_rate * channels * bits_per_sample / 8;
     uint16_t block_align = channels * bits_per_sample / 8;
@@ -235,7 +263,14 @@ void srt_stream_write(srt_stream_data* sdata, const float* data, size_t len) {
                 v = -1.0f;
             sdata->pcm_buffer[i] = (int16_t)(v * 32767.0f);
         }
-        srt_stream_send(sdata, (const char*)sdata->pcm_buffer, sample_count * sizeof(int16_t));
+        if (sdata->resample_buffer) {
+            size_t out_count = resample_linear(sdata->pcm_buffer, sample_count,
+                                               sdata->resample_buffer,
+                                               WAVE_RATE, sdata->sample_rate);
+            srt_stream_send(sdata, (const char*)sdata->resample_buffer, out_count * sizeof(int16_t));
+        } else {
+            srt_stream_send(sdata, (const char*)sdata->pcm_buffer, sample_count * sizeof(int16_t));
+        }
     } else {
         srt_stream_send(sdata, (const char*)data, len);
     }
@@ -256,9 +291,10 @@ void srt_stream_write(srt_stream_data* sdata, const float* left, const float* ri
         sdata->stereo_buffer[2 * i + 1] = right[i];
     }
     if (sdata->format == SRT_STREAM_WAV || sdata->format == SRT_STREAM_PCM) {
-        if (sample_count * 2 > sdata->pcm_buffer_len)
+        size_t total = sample_count * 2;
+        if (total > sdata->pcm_buffer_len)
             return;
-        for (size_t i = 0; i < sample_count * 2; ++i) {
+        for (size_t i = 0; i < total; ++i) {
             float v = sdata->stereo_buffer[i];
             if (v > 1.0f)
                 v = 1.0f;
@@ -266,7 +302,14 @@ void srt_stream_write(srt_stream_data* sdata, const float* left, const float* ri
                 v = -1.0f;
             sdata->pcm_buffer[i] = (int16_t)(v * 32767.0f);
         }
-        srt_stream_send(sdata, (const char*)sdata->pcm_buffer, sample_count * 2 * sizeof(int16_t));
+        if (sdata->resample_buffer) {
+            size_t out_count = resample_linear(sdata->pcm_buffer, total,
+                                               sdata->resample_buffer,
+                                               WAVE_RATE, sdata->sample_rate);
+            srt_stream_send(sdata, (const char*)sdata->resample_buffer, out_count * sizeof(int16_t));
+        } else {
+            srt_stream_send(sdata, (const char*)sdata->pcm_buffer, total * sizeof(int16_t));
+        }
     } else {
         srt_stream_send(sdata, (const char*)sdata->stereo_buffer, sample_count * 2 * sizeof(float));
     }
@@ -281,6 +324,8 @@ void srt_stream_shutdown(srt_stream_data* sdata) {
     sdata->stereo_buffer = NULL;
     free(sdata->pcm_buffer);
     sdata->pcm_buffer = NULL;
+    free(sdata->resample_buffer);
+    sdata->resample_buffer = NULL;
     if (sdata->listen_socket != SRT_INVALID_SOCK) {
         srt_close(sdata->listen_socket);
         sdata->listen_socket = SRT_INVALID_SOCK;

@@ -189,7 +189,11 @@ struct srt_stream_data {
     int16_t* pcm_buffer;
     size_t pcm_buffer_len;
 
+    int16_t* resample_buffer;
+    size_t resample_buffer_len;
+
     int payload_size;
+    int sample_rate;
 
     srt_stream_format format;
     srt_stream_mode srt_mode;
