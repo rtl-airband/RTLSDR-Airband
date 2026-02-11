@@ -36,10 +36,11 @@ jobs:
     - name: Runner Info
       run: printenv | sort
 
-    - name: Prepare platform tag
-      id: platform
+    - name: Prepare
+      id: prep
       run: |
-        echo "pair=${platform//\//-}" >> $GITHUB_OUTPUT
+        echo "platform_pair=${platform//\//-}" >> $GITHUB_OUTPUT
+        echo "repo_lowercase=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       env:
         platform: ${{ matrix.platform }}
 
@@ -52,7 +53,7 @@ jobs:
       id: metadata
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/${{ github.repository }}
+        images: ghcr.io/${{ steps.prep.outputs.repo_lowercase }}
 
     - name: Set up QEMU
       if: matrix.os == 'ubuntu-latest'
@@ -73,10 +74,10 @@ jobs:
       uses: docker/build-push-action@v6
       with:
         platforms: ${{ matrix.platform }}
-        cache-from: type=gha,scope=build-${{ steps.platform.outputs.pair }}
-        cache-to: type=gha,mode=max,scope=build-${{ steps.platform.outputs.pair }}
+        cache-from: type=gha,scope=build-${{ steps.prep.outputs.platform_pair }}
+        cache-to: type=gha,mode=max,scope=build-${{ steps.prep.outputs.platform_pair }}
         context: .
-        outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+        outputs: type=image,name=ghcr.io/${{ steps.prep.outputs.repo_lowercase }},push-by-digest=true,name-canonical=true,push=true
 
     - name: Export digest
       run: |
@@ -87,7 +88,7 @@ jobs:
     - name: Upload digest
       uses: actions/upload-artifact@v4
       with:
-        name: digests-${{ steps.platform.outputs.pair }}
+        name: digests-${{ steps.prep.outputs.platform_pair }}
         path: /tmp/digests/*
         if-no-files-found: error
         retention-days: 1
@@ -99,6 +100,15 @@ jobs:
       contents: read
       packages: write
     steps:
+
+    - name: Runner Info
+      run: printenv | sort
+
+    - name: Prepare
+      id: prep
+      run: |
+        echo "repo_lowercase=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
     - name: Download digests
       uses: actions/download-artifact@v4
       with:
@@ -113,7 +123,7 @@ jobs:
       id: metadata
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/${{ github.repository }}
+        images: ghcr.io/${{ steps.prep.outputs.repo_lowercase }}
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
@@ -126,8 +136,8 @@ jobs:
       working-directory: /tmp/digests
       run: |
         docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+          $(printf 'ghcr.io/${{ steps.prep.outputs.repo_lowercase }}@sha256:%s ' *)
 
     - name: Inspect image
       run: |
-        docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.metadata.outputs.version }}
+        docker buildx imagetools inspect ghcr.io/${{ steps.prep.outputs.repo_lowercase }}:${{ steps.metadata.outputs.version }}
