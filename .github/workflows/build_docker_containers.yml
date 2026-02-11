@@ -56,7 +56,6 @@ jobs:
         images: ghcr.io/${{ steps.prep.outputs.repo_lowercase }}
 
     - name: Set up QEMU
-      if: matrix.os == 'ubuntu-latest'
       uses: docker/setup-qemu-action@v3
 
     - name: Set up Docker Buildx
