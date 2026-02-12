@@ -30,10 +30,10 @@ jobs:
 
     - name: Configure
       run: |
-        cmake -B ${{github.workspace}}/build_Debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Debug_NFM -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Release -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Release_NFM -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Debug -DCMAKE_BUILD_TYPE=Debug -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Debug_NFM -DCMAKE_BUILD_TYPE=Debug -DPLATFORM=generic -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Release -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Release_NFM -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
 
     - name: Build
       run: |
