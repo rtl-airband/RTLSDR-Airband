@@ -13,7 +13,7 @@ jobs:
   ci_build:
     strategy:
       matrix:
-        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm ]
+        os: [ ubuntu-24.04, ubuntu-24.04-arm, ubuntu-22.04, ubuntu-22.04-arm, macos-14, macos-15, macos-15-intel, macos-26 ]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35 # runtime across all OSs, runs can get queued
     steps:
@@ -30,10 +30,10 @@ jobs:
 
     - name: Configure
       run: |
-        cmake -B ${{github.workspace}}/build_Debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Debug_NFM -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Release -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Release_NFM -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Debug -DCMAKE_BUILD_TYPE=Debug -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Debug_NFM -DCMAKE_BUILD_TYPE=Debug -DPLATFORM=generic -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Release -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
+        cmake -B ${{github.workspace}}/build_Release_NFM -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
 
     - name: Build
       run: |

@@ -12,3 +12,11 @@ repos:
   hooks:
   - id: clang-format
     files: src/.*\.cpp|src/.*\.h
+
+- repo: local
+  hooks:
+  - id: build_and_test
+    name: build and test
+    entry: ./scripts/build_and_run_tests
+    language: script
+    pass_filenames: false
