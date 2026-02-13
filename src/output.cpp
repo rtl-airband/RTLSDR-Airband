@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <vorbis/vorbisenc.h>
 
@@ -157,6 +158,8 @@ lame_t airlame_init(mix_modes mixmode, int highpass, int lowpass) {
     lame_set_quality(lame, 7);
     lame_set_lowpassfreq(lame, lowpass);
     lame_set_highpassfreq(lame, highpass);
+    /* Disable the bit reservoir to reduce encoder latency */
+    lame_set_disable_reservoir(lame, 1);
     lame_set_out_samplerate(lame, MP3_RATE);
     if (mixmode == MM_STEREO) {
         lame_set_num_channels(lame, 2);
@@ -317,6 +320,8 @@ static void close_file(output_t* output) {
         return;
     }
 
+    double duration_sec = delta_sec(&fdata->open_time, &fdata->last_write_time);
+
     // close all mp3 files for every output that has a lame context
     if (fdata->type == O_FILE && fdata->f && output->lame) {
         int encoded = lame_encode_flush_nogap(output->lame, output->lamebuf, LAMEBUF_SIZE);
@@ -337,7 +342,31 @@ static void close_file(output_t* output) {
     if (fdata->f) {
         fclose(fdata->f);
         fdata->f = NULL;
-        rename_if_exists(fdata->file_path_tmp.c_str(), fdata->file_path.c_str());
+        bool keep = true;
+        if (fdata->split_on_transmission && fdata->min_rx_seconds > 0.0 && duration_sec < fdata->min_rx_seconds) {
+            keep = false;
+        }
+
+        if (keep) {
+            rename_if_exists(fdata->file_path_tmp.c_str(), fdata->file_path.c_str());
+            if (fdata->split_on_transmission && !fdata->post_write_script.empty()) {
+                pid_t pid = fork();
+                if (pid < 0) {
+                    log(LOG_ERR, "Cannot fork for post_write_script: %s\n", strerror(errno));
+                } else if (pid == 0) {
+                    pid_t pid2 = fork();
+                    if (pid2 == 0) {
+                        execl("/bin/sh", "sh", fdata->post_write_script.c_str(), fdata->file_path.c_str(), (char*)NULL);
+                        _exit(1);
+                    }
+                    _exit(0);
+                } else {
+                    waitpid(pid, NULL, 0);
+                }
+            }
+        } else {
+            unlink(fdata->file_path_tmp.c_str());
+        }
     }
     fdata->file_path.clear();
     fdata->file_path_tmp.clear();
@@ -568,11 +597,30 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
             if (sdata->continuous == false && channel->axcindicate == NO_SIGNAL) {
                 continue;
             }
+        } else if (channel->outputs[k].type == O_SRT) {
+            srt_stream_data* sdata = (srt_stream_data*)channel->outputs[k].data;
 
-            if (channel->mode == MM_MONO) {
-                udp_stream_write(sdata, channel->waveout, (size_t)WAVE_BATCH * sizeof(float));
+            if (sdata->continuous == false && channel->axcindicate == NO_SIGNAL)
+                continue;
+
+            if (sdata->format == SRT_STREAM_MP3) {
+                const auto& lame = channel->outputs[k].lame;
+                const auto& lamebuf = channel->outputs[k].lamebuf;
+                int mp3_bytes = lame_encode_buffer_ieee_float(
+                    lame, channel->waveout,
+                    (channel->mode == MM_STEREO ? channel->waveout_r : NULL),
+                    WAVE_BATCH, lamebuf, LAMEBUF_SIZE);
+                if (mp3_bytes < 0) {
+                    log(LOG_WARNING, "lame_encode_buffer_ieee_float: %d\n", mp3_bytes);
+                } else if (mp3_bytes > 0) {
+                    srt_stream_send_bytes(sdata, lamebuf, mp3_bytes);
+                }
             } else {
-                udp_stream_write(sdata, channel->waveout, channel->waveout_r, (size_t)WAVE_BATCH * sizeof(float));
+                if (channel->mode == MM_MONO) {
+                    srt_stream_write(sdata, channel->waveout, (size_t)WAVE_BATCH * sizeof(float));
+                } else {
+                    srt_stream_write(sdata, channel->waveout, channel->waveout_r, (size_t)WAVE_BATCH * sizeof(float));
+                }
             }
 
 #ifdef WITH_PULSEAUDIO
@@ -607,6 +655,9 @@ void disable_channel_outputs(channel_t* channel) {
         } else if (output->type == O_UDP_STREAM) {
             udp_stream_data* sdata = (udp_stream_data*)output->data;
             udp_stream_shutdown(sdata);
+        } else if (output->type == O_SRT) {
+            srt_stream_data* sdata = (srt_stream_data*)output->data;
+            srt_stream_shutdown(sdata);
 #ifdef WITH_PULSEAUDIO
         } else if (output->type == O_PULSE) {
             pulse_data* pdata = (pulse_data*)(output->data);
@@ -988,6 +1039,12 @@ void* output_check_thread(void*) {
 
                         if (dev->input->state == INPUT_FAILED) {
                             udp_stream_shutdown(sdata);
+                        }
+                    } else if (dev->channels[j].outputs[k].type == O_SRT) {
+                        srt_stream_data* sdata = (srt_stream_data*)dev->channels[j].outputs[k].data;
+
+                        if (dev->input->state == INPUT_FAILED) {
+                            srt_stream_shutdown(sdata);
                         }
 #ifdef WITH_PULSEAUDIO
                     } else if (dev->channels[j].outputs[k].type == O_PULSE) {
