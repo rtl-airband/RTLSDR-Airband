@@ -231,6 +231,25 @@ unsigned execute_qpu(int file_desc, unsigned num_qpus, unsigned control, unsigne
     return p[5];
 }
 
+unsigned get_board_revision(int file_desc) {
+    int i = 0;
+    unsigned p[32];
+
+    p[i++] = 0;           // size
+    p[i++] = 0x00000000;  // process request
+
+    p[i++] = 0x00010002;  // GET_BOARD_REVISION
+    p[i++] = 4;           // (size of the buffer)
+    p[i++] = 0;           // (request/response code)
+    p[i++] = 0;           // (value buffer)
+
+    p[i++] = 0x00000000;   // end tag
+    p[0] = i * sizeof *p;  // actual size
+
+    mbox_property(file_desc, p);
+    return p[5];
+}
+
 int mbox_open() {
     int file_desc;
 
