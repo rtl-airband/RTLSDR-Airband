@@ -1,8 +1,8 @@
 [Unit]
 Description=SDR AM/NFM demodulator
 Documentation=https://github.com/rtl-airband/RTLSDR-Airband/wiki
-Wants=network.target
-After=network.target
+Wants=network.target  # NOTE: `network-online.target` may be better for some use cases
+After=network.target  # NOTE: `network-online.target` may be better for some use cases
 
 [Service]
 Type=simple
