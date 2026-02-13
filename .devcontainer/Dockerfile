@@ -13,7 +13,8 @@ RUN DEBIAN_FRONTEND=noninteractive \
         gdb \
         clang-format-14 \
         python3-pip \
-        pre-commit
+        pre-commit \
+        vim
 
 WORKDIR /app
 COPY .github/install_dependencies /app/

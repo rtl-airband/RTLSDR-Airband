@@ -49,18 +49,12 @@ RUN git clone https://github.com/f4exb/libmirisdr-4 && \
 # set working dir for project build
 WORKDIR /rtl_airband_build
 
-# copy in the rtl_airband source
-# WARNING: not copying in the whole repo, this may need to be updated if build files are added outside of src/
-COPY ./.git/ .git/
-COPY ./src/ src/
-COPY ./scripts/ scripts/
-COPY ./CMakeLists.txt .
+# copy in the rtl_airband source, coping in the full repo so find_version will be correct
+COPY ./ .
 
 # configure and build
 # TODO: detect platforms
-RUN uname -m && \
-    echo | gcc -### -v -E - | tee compiler_native_info.txt && \
-    cmake -B build_dir -DPLATFORM=generic -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE && \
+RUN cmake -B build_dir -DPLATFORM=generic -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE && \
     VERBOSE=1 cmake --build build_dir -j4
 
 # make sure unit tests pass
