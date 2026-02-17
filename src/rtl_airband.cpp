@@ -349,10 +349,11 @@ void* demodulate(void* params) {
     // blackman 7
     // the whole matrix is computed
 #ifdef WITH_BCM_VC
-    float ALIGNED32 window[fft_size * 2];
+    size_t window_size = fft_size * 2 * sizeof(float);
 #else
-    float ALIGNED32 window[fft_size];
+    size_t window_size = fft_size * sizeof(float);
 #endif /* WITH_BCM_VC */
+    float* window = static_cast<float*>(aligned_alloc(32, window_size));
 
     const double a0 = 0.27105140069342f;
     const double a1 = 0.43329793923448f;

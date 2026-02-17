@@ -1,0 +1,10 @@
+#!/bin/bash -ex
+
+PROJECT_ROOT_PATH="$(cd $(dirname "$0")/../ ; pwd)"
+BUILD_DIR="${PROJECT_ROOT_PATH}/build"
+
+cd ${PROJECT_ROOT_PATH}
+
+cmake -B ${BUILD_DIR} -DBUILD_UNITTESTS=TRUE
+VERBOSE=1 cmake --build ${BUILD_DIR} -j
+${BUILD_DIR}/src/unittests
