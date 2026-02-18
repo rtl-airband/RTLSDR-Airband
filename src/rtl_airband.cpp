@@ -277,6 +277,11 @@ bool init_output(channel_t* channel, output_t* output) {
         if (!udp_stream_init(sdata, channel->mode, (size_t)WAVE_BATCH * sizeof(float))) {
             return false;
         }
+    } else if (output->type == O_SRT) {
+        srt_stream_data* sdata = (srt_stream_data*)(output->data);
+        if (!srt_stream_init(sdata, channel->mode, (size_t)WAVE_BATCH * sizeof(float))) {
+            return false;
+        }
 #ifdef WITH_PULSEAUDIO
     } else if (output->type == O_PULSE) {
         pulse_init();

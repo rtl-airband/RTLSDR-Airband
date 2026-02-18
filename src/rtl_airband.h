@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <libconfig.h++>
 #include <string>
+#include <vector>
 
 #include "config.h"
 
@@ -43,6 +44,9 @@
 #include <pulse/context.h>
 #include <pulse/stream.h>
 #endif /* WITH_PULSEAUDIO */
+#ifdef WITH_SRT
+#include <srt/srt.h>
+#endif /* WITH_SRT */
 
 #include "filters.h"
 #include "input-common.h"  // input_t
@@ -106,7 +110,8 @@ enum output_type {
     O_FILE,
     O_RAWFILE,
     O_MIXER,
-    O_UDP_STREAM
+    O_UDP_STREAM,
+    O_SRT
 #ifdef WITH_PULSEAUDIO
     ,
     O_PULSE
@@ -140,6 +145,8 @@ struct file_data {
     bool append;
     bool split_on_transmission;
     bool include_freq;
+    double min_rx_seconds;
+    std::string post_write_script;
     timeval open_time;
     timeval last_write_time;
     FILE* f;
@@ -157,6 +164,47 @@ struct udp_stream_data {
     int send_socket;
     struct sockaddr dest_sockaddr;
     socklen_t dest_sockaddr_len;
+};
+
+enum srt_stream_format {
+    SRT_STREAM_PCM,
+    SRT_STREAM_MP3,
+    SRT_STREAM_WAV
+};
+
+enum srt_stream_mode {
+    SRT_MODE_LIVE,  // Standard SRT with TSBPD, compatible with all clients
+    SRT_MODE_RAW    // Minimal latency, TSBPD disabled (ffplay only)
+};
+
+struct srt_client {
+    SRTSOCKET sock;
+    bool header_sent;
+};
+
+struct srt_stream_data {
+    float* stereo_buffer;
+    size_t stereo_buffer_len;
+
+    int16_t* pcm_buffer;
+    size_t pcm_buffer_len;
+
+    int16_t* resample_buffer;
+    size_t resample_buffer_len;
+
+    int payload_size;
+    int sample_rate;
+
+    srt_stream_format format;
+    srt_stream_mode srt_mode;
+    mix_modes mode;
+
+    bool continuous;
+    const char* listen_address;
+    const char* listen_port;
+
+    SRTSOCKET listen_socket;
+    std::vector<srt_client> clients;
 };
 
 #ifdef WITH_PULSEAUDIO
@@ -393,6 +441,13 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len);
 void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len);
 void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len);
 void udp_stream_shutdown(udp_stream_data* sdata);
+
+// srt_stream.cpp
+bool srt_stream_init(srt_stream_data* sdata, mix_modes mode, size_t len);
+void srt_stream_write(srt_stream_data* sdata, const float* data, size_t len);
+void srt_stream_write(srt_stream_data* sdata, const float* data_left, const float* data_right, size_t len);
+void srt_stream_send_bytes(srt_stream_data* sdata, const unsigned char* data, size_t len);
+void srt_stream_shutdown(srt_stream_data* sdata);
 
 #ifdef WITH_PULSEAUDIO
 #define PULSE_STREAM_LATENCY_LIMIT 10000000UL

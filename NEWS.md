@@ -100,6 +100,7 @@ Version 4.0.0 (Oct 19, 2021):
   is outside the band of the channel filter (thx @charlie-foxtrot).
 * New output type `udp_stream` for sending uncompressed audio to another host
   via UDP/IP (thx @charlie-foxtrot).
+* New output type `srt` for streaming uncompressed audio over the SRT protocol.
 * Added `multiple_output_threads` global option. When set to `true`, a separate
   output thread is spawned for each device (thx @charlie-foxtrot).
 * Modulation in scan mode is now configurable per channel (thx
