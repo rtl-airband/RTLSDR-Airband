@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+
+import re
+import os
+import sys
+import json
+import shutil
+import logging
+import argparse
+
+from time import sleep
+
+from pathlib import Path
+from datetime import datetime, timedelta
+from subprocess import run
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+logging.basicConfig(
+    stream=sys.stderr,
+    format="%(asctime)s %(levelname)s - %(message)s",
+)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build and run integration tests")
+    parser.add_argument(
+        "--clean", action="store_true", help="Clean build directories before building"
+    )
+    parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    args = parser.parse_args()
+
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("starting with args: %s", args)
+
+    builds: dict[str, list[str]] = {
+        "Debug": ["-DCMAKE_BUILD_TYPE=Debug", "-DBUILD_UNITTESTS=TRUE"],
+        "Debug_NFM": [
+            "-DCMAKE_BUILD_TYPE=Debug",
+            "-DNFM=TRUE",
+            "-DBUILD_UNITTESTS=TRUE",
+        ],
+        "Release": ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_UNITTESTS=TRUE"],
+        "Release_NFM": [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DNFM=TRUE",
+            "-DBUILD_UNITTESTS=TRUE",
+        ],
+    }
+
+    test_root_dir = Path(__file__).parent
+
+    am_tests, nfm_tests = load_test_cases(test_root_dir)
+
+    # kick off all the builds
+    build_futures = {}
+    with ThreadPoolExecutor() as executor:
+        for name, cmake_args in builds.items():
+            future = executor.submit(
+                build, test_root_dir, name, cmake_args, args.clean, args.verbose
+            )
+            build_futures[future] = name
+
+    # wait for builds to complete
+    build_failed = False
+    for future in as_completed(build_futures):
+        build_name = build_futures[future]
+        if future.result():
+            logger.info("%s completed successfully", build_name)
+        else:
+            logger.error("%s failed", build_name)
+            build_failed = True
+
+    # exit if any build failed
+    if build_failed:
+        sys.exit(1)
+
+    # kick off all the tests
+    test_futures = {}
+    with ThreadPoolExecutor() as executor:
+        for name in builds:
+            is_debug = "Debug" in name
+            is_nfm = "NFM" in name
+            for test in am_tests:
+                future = executor.submit(test.run, name, is_debug)
+                test_futures[future] = f"{name} {test.test_name}"
+            if is_nfm:
+                for test in nfm_tests:
+                    future = executor.submit(test.run, name, is_debug)
+                    test_futures[future] = f"{name} {test.test_name}"
+
+    # wait for tests to complete
+    test_failed = False
+    for future in as_completed(test_futures):
+        test_name = test_futures[future]
+        if future.result():
+            logger.info("%s completed successfully", test_name)
+        else:
+            logger.error("%s failed", test_name)
+            test_failed = True
+
+    # exit if any test failed
+    if test_failed:
+        sys.exit(1)
+
+
+class TestCase:
+    def __init__(
+        self,
+        test_root_dir: Path,
+        config_name: str,
+        mp3s: dict[str, dict],
+        other_files: list[str],
+        debug_files: list[str],
+    ):
+        self.test_root_dir = test_root_dir
+        self.test_name = config_name.removesuffix(".conf")
+        self.config_path = test_root_dir / f"test_cases/{config_name}"
+        self.mp3s = mp3s
+        self.other_files = other_files
+        self.debug_files = debug_files
+
+    def run(self, name: str, debug: bool):
+        logging.info("running %s with %s", name, self.config_path.name)
+
+        # make a working dir for the output files to be written to
+        working_dir = (
+            self.test_root_dir / f"{name}_{self.config_path.name.removesuffix('.conf')}"
+        )
+        if working_dir.exists():
+            shutil.rmtree(working_dir)
+        working_dir.mkdir()
+
+        # make the paths
+        binary_path = self.test_root_dir / name / "src/rtl_airband"
+
+        # run the command
+        if not run_cmd(
+            f"{binary_path} -c {self.config_path} -F -e",
+            f"running {name} with {self.test_name}",
+            working_dir,
+        ):
+            return False
+
+        # check the outputs
+        return self.check_outputs(name, working_dir, debug)
+
+    def check_outputs(self, name: str, working_dir: Path, debug: bool) -> bool:
+
+        label = f"{name} with {self.test_name}"
+
+        checked_files: set[str] = set()
+
+        all_outputs_good = True
+
+        # max time to wait for files to show up
+        stop_waiting_time = datetime.now() + timedelta(seconds=15)
+
+        for filename_pattern, file_info in self.mp3s.items():
+
+            expected_sec = file_info["duration"]
+            expected_mode = file_info["mode"]
+
+            # wait up to stop_waiting_time for files to show up
+            files = list(working_dir.glob(filename_pattern))
+            while len(files) == 0 and datetime.now() < stop_waiting_time:
+                sleep(1)
+                files = list(working_dir.glob(filename_pattern))
+
+            if len(files) != 1:
+                logger.error("%s missing %s", label, filename_pattern)
+                all_outputs_good = False
+                continue
+
+            try:
+                actual_sec, actual_mode = get_mp3_info(files[0])
+            except Exception:
+                logger.error(
+                    "%s failed to get duration for %s",
+                    label,
+                    files[0].name,
+                )
+                all_outputs_good = False
+                continue
+
+            logger.debug("%s is %0.2f sec", files[0], actual_sec)
+
+            # actual time can be within 1% or 0.75 sec, whichever is greater
+            # TODO: the DEBUG builds tend to have longer MP3 files for some reason...
+            if abs(actual_sec - expected_sec) > max(expected_sec * 0.01, 0.75):
+                logger.error(
+                    "%s expected %s to be %0.2f sec but was %0.2f sec",
+                    label,
+                    files[0].name,
+                    expected_sec,
+                    actual_sec,
+                )
+                all_outputs_good = False
+
+            logger.debug("%s is %s", files[0], actual_mode)
+
+            # check mp3 file mode
+            if actual_mode != expected_mode:
+                logger.error(
+                    "%s expected %s to be %s but was %s",
+                    label,
+                    files[0].name,
+                    expected_mode,
+                    actual_mode,
+                )
+                all_outputs_good = False
+
+            checked_files.add(files[0].name)
+
+        for filename_pattern in (
+            self.other_files + self.debug_files if debug else self.other_files
+        ):
+            # wait up to stop_waiting_time for files to show up
+            files = list(working_dir.glob(filename_pattern))
+            while len(files) == 0 and datetime.now() < stop_waiting_time:
+                sleep(1)
+                files = list(working_dir.glob(filename_pattern))
+
+            if len(files) != 1:
+                logger.error("%s missing %s", label, filename_pattern)
+                all_outputs_good = False
+
+            logger.debug("found %s", files[0])
+            checked_files.add(files[0].name)
+
+        # make sure all files are accounted for
+        all_files = set([x.name for x in working_dir.glob("*")])
+
+        if checked_files != all_files:
+            logger.error(
+                "%s extra files: %s",
+                label,
+                all_files.difference(checked_files),
+            )
+            all_outputs_good = False
+
+        return all_outputs_good
+
+
+def load_test_cases(test_root_dir: Path) -> tuple[list[TestCase], list[TestCase]]:
+
+    test_cases_path = test_root_dir / "test_cases/info.json"
+
+    assert test_cases_path.exists(), f"{test_cases_path} not found"
+
+    with open(test_cases_path, "rt", encoding="utf-8") as f:
+        test_cases = json.load(f)
+
+    return [test_case_from_json(x, test_root_dir) for x in test_cases["am"]], [
+        test_case_from_json(x, test_root_dir) for x in test_cases["nfm"]
+    ]
+
+
+def test_case_from_json(info: dict, test_root_dir) -> TestCase:
+    return TestCase(
+        test_root_dir,
+        info["config"],
+        info.get("mp3_files", {}),
+        info.get("other_files", []),
+        info.get("debug_files", []),
+    )
+
+
+def get_mp3_info(mp3: Path) -> tuple[float, str]:
+
+    cmd = f"ffprobe {mp3}"
+    result = run(
+        cmd,
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    # get duration
+    duration_regex = re.search(r"Duration: ([0-9:.]*),", result.stderr)
+    assert (
+        duration_regex is not None
+    ), f"failed to get duration string out of ffprobe for {mp3.name}"
+
+    hours, minutes, seconds = [float(x) for x in duration_regex.groups()[0].split(":")]
+    duration = ((hours * 60) + minutes) * 60 + seconds
+
+    # get mode
+    # Stream #0:0: Audio: mp3, 8000 Hz, stereo, fltp, 20 kb/s
+    mode = result.stderr.splitlines()[-1].split(",")[2].strip()
+
+    return duration, mode
+
+
+def build(
+    test_root_dir: Path, name: str, args: list[str], clean: bool, verbose: bool
+) -> bool:
+
+    logger.info("%s build starting . . .", name)
+
+    build_dir = test_root_dir / name
+
+    # clean build directory
+    if clean and build_dir.exists():
+        shutil.rmtree(build_dir)
+
+    # make build directory and call cmake
+    if not build_dir.exists():
+        build_dir.mkdir()
+        if not run_cmd(f"cmake ../../ {' '.join(args)}", f"cmake {name}", build_dir):
+            return False
+
+    # set verbose
+    env = os.environ.copy()
+    if verbose:
+        env["VERBOSE"] = "1"
+
+    # run make
+    if not run_cmd("make -j", f"make {name}", build_dir, env):
+        return False
+
+    return True
+
+
+def run_cmd(cmd: str, description: str, cwd: Path, env=None) -> bool:
+    logger.debug("running %s in %s", cmd, cwd)
+    result = run(
+        cmd,
+        cwd=cwd,
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    # on failed return code log stdout and stderr as error then return
+    if result.returncode != 0:
+        logger.error("%s failed:", description)
+        for line in result.stdout.splitlines():
+            logger.error("stdout: %s", line)
+        for line in result.stderr.splitlines():
+            logger.error("stderr: %s", line)
+        return False
+
+    # on success log stdout and stderr to debug
+    for line in result.stdout.splitlines():
+        logger.debug("stdout: %s", line)
+    for line in result.stderr.splitlines():
+        logger.debug("stderr: %s", line)
+
+    return True
+
+
+def run_signal(test_root_dir: Path, name: str, config: str) -> bool:
+    logging.info("running %s with %s", name, config)
+
+    # make a working dir for the output files to be written to
+    working_dir = test_root_dir / f"{name}_{config.removesuffix('.conf')}"
+    if working_dir.exists():
+        shutil.rmtree(working_dir)
+    working_dir.mkdir()
+
+    # make the paths
+    binary_path = test_root_dir / name / "src/rtl_airband"
+    config_path = test_root_dir / f"test_cases/{config}"
+
+    # run the command
+    run_cmd(
+        f"{binary_path} -c {config_path}", f"running {name} with {config}", working_dir
+    )
+
+    return True
+
+
+if __name__ == "__main__":
+    main()

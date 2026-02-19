@@ -1,25 +1,17 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
-// https://github.com/microsoft/vscode-dev-containers/tree/v0.177.0/containers/docker-existing-dockerfile
 {
 	"name": "Existing Dockerfile",
-
-	// Sets the run context to one level up instead of the .devcontainer folder.
 	"context": "..",
-
 	"dockerFile": "Dockerfile",
-
-	"updateContentCommand" : "apt-get install git",
-
-	"postCreateCommand" : "cmake -B /app/build -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=true ; pre-commit install",
-
-	// vs code extensions to install in the dev container
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"ms-vscode.cpptools",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.black-formatter",
+				"ms-python.pylint",
 				"ms-vscode.cmake-tools",
+				"ms-vscode.cpptools",
 				"ms-vscode.cpptools-extension-pack",
-				"twxs.cmake",
 				"streetsidesoftware.code-spell-checker",
 				"ms-azuretools.vscode-docker",
 				"GitHub.vscode-github-actions",
@@ -27,9 +19,14 @@
 			]
 		}
 	},
-
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
-
-	"runArgs": [ "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ]
+	"containerEnv": {
+		"SHELL": "/bin/bash"
+	},
+	"postCreateCommand": "cmake -B ./build -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=true",
+	"postStartCommand": "pre-commit install",
+	"runArgs": [
+		"--cap-add=SYS_PTRACE",
+		"--security-opt",
+		"seccomp=unconfined"
+	]
 }

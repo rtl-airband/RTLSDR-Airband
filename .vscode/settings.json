@@ -1,7 +1,42 @@
 {
+    "files.autoSave": "onFocusChange",
+    "files.insertFinalNewline": true,
     "editor.formatOnPaste": true,
     "editor.formatOnSave": true,
     "editor.formatOnType": true,
-    "editor.defaultFormatter": "xaver.clang-format",
-    "clang-format.executable": "clang-format-14"
+    "editor.defaultFormatter": null,
+    "[python]": {
+        "editor.quickSuggestions": {
+            "other": "on",
+            "comments": "off",
+            "strings": "on"
+        },
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.suggest.insertMode": "insert"
+    },
+    "[cpp]": {
+        "editor.quickSuggestions": {
+            "other": "on",
+            "comments": "off",
+            "strings": "on"
+        },
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.suggest.insertMode": "insert"
+    },
+    "[json]": {
+        "editor.quickSuggestions": {
+            "strings": true
+        },
+        "editor.suggest.insertMode": "replace",
+        "editor.formatOnPaste": true,
+        "editor.formatOnSave": true,
+        "editor.formatOnType": true
+    },
+    "clang-format.executable": "clang-format-14",
+    "files.trimTrailingWhitespace": true,
+    "cSpell.diagnosticLevel": "Hint",
+    "python.analysis.typeCheckingMode": "standard",
+    "pylint.severity": {
+        "refactor": "Information"
+    }
 }
