@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from subprocess import run
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from typing import Any
+
 
 logging.basicConfig(
     stream=sys.stderr,
@@ -25,44 +27,113 @@ logger.setLevel(logging.INFO)
 
 
 def main():
+
+    # parse commandline arguments
     parser = argparse.ArgumentParser(description="Build and run integration tests")
+    parser.add_argument(
+        "test_config",
+        help="Path to a JSON file with the test configuration (builds and test cases)",
+    )
     parser.add_argument(
         "--clean", action="store_true", help="Clean build directories before building"
     )
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
     args = parser.parse_args()
 
+    # handle debug mode
     if args.verbose:
         logger.setLevel(logging.DEBUG)
         logger.debug("starting with args: %s", args)
 
-    builds: dict[str, list[str]] = {
-        "Debug": ["-DCMAKE_BUILD_TYPE=Debug", "-DBUILD_UNITTESTS=TRUE"],
-        "Debug_NFM": [
-            "-DCMAKE_BUILD_TYPE=Debug",
-            "-DNFM=TRUE",
-            "-DBUILD_UNITTESTS=TRUE",
-        ],
-        "Release": ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_UNITTESTS=TRUE"],
-        "Release_NFM": [
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DNFM=TRUE",
-            "-DBUILD_UNITTESTS=TRUE",
-        ],
-    }
+    # make sure config file is valid
+    test_config = Path(args.test_config)
+    assert test_config.exists(), (
+        f"{test_config} does not exist, it should be a JSON file with build and test case "
+        "information"
+    )
+    logger.debug("test config: %s", test_config)
 
-    test_root_dir = Path(__file__).parent
+    working_dir = Path(__file__).parent
+    logger.debug("working dir: %s", working_dir)
 
-    am_tests, nfm_tests = load_test_cases(test_root_dir)
+    builds = do_builds(test_config, working_dir, args.clean)
+    do_tests(builds, test_config, working_dir)
+
+
+class Build:
+
+    def __init__(
+        self, src_dir: Path, builds_root_dir: Path, name: str, args: list[str]
+    ) -> None:
+        self.name = name
+        self.src_dir = src_dir
+        self.build_dir = builds_root_dir / name
+        self.args = args
+
+        self.is_debug = "Debug" in name
+        self.is_nfm = "NFM" in name
+        self.binary_path = self.build_dir / "src/rtl_airband"
+
+        self.build_completed = False
+
+    def run(self) -> bool:
+
+        logger.info("%s build starting . . .", self.name)
+        self.build_completed = False
+
+        # make build directory and call cmake
+        if not self.build_dir.exists():
+            self.build_dir.mkdir(parents=True)
+            if not run_cmd(
+                f"cmake -B {self.build_dir} {' '.join(self.args)}",
+                f"cmake {self.name}",
+                self.src_dir,
+            ):
+                return False
+
+        # set verbose
+        env = os.environ.copy()
+        env["VERBOSE"] = "1"
+
+        # run make
+        if not run_cmd(
+            f"cmake --build {self.build_dir} -j",
+            f"make {self.name}",
+            self.src_dir,
+            env,
+        ):
+            return False
+
+        self.build_completed = True
+        return True
+
+
+def do_builds(test_config: Path, working_dir: Path, clean: bool) -> list[Build]:
+
+    # repo root is one directory above this script
+    repo_root_dir = Path(__file__).parent.parent
+
+    # make root directory for all builds
+    builds_root_dir = working_dir / "builds"
+    if clean and builds_root_dir.exists():
+        shutil.rmtree(builds_root_dir)
+    builds_root_dir.mkdir(parents=True, exist_ok=True)
+
+    # load the test config and extract the build info
+    with open(test_config, "rt", encoding="utf-8") as f:
+        build_configs: dict[str, list[str]] = json.load(f)["builds"]
+        builds = [
+            Build(repo_root_dir, builds_root_dir, name, args)
+            for name, args in build_configs.items()
+        ]
+    logger.info("loaded %s build config(s)", len(builds))
 
     # kick off all the builds
     build_futures = {}
     with ThreadPoolExecutor() as executor:
-        for name, cmake_args in builds.items():
-            future = executor.submit(
-                build, test_root_dir, name, cmake_args, args.clean, args.verbose
-            )
-            build_futures[future] = name
+        for build in builds:
+            future = executor.submit(build.run)
+            build_futures[future] = build.name
 
     # wait for builds to complete
     build_failed = False
@@ -78,85 +149,52 @@ def main():
     if build_failed:
         sys.exit(1)
 
-    # kick off all the tests
-    test_futures = {}
-    with ThreadPoolExecutor() as executor:
-        for name in builds:
-            is_debug = "Debug" in name
-            is_nfm = "NFM" in name
-            for test in am_tests:
-                future = executor.submit(test.run, name, is_debug)
-                test_futures[future] = f"{name} {test.test_name}"
-            if is_nfm:
-                for test in nfm_tests:
-                    future = executor.submit(test.run, name, is_debug)
-                    test_futures[future] = f"{name} {test.test_name}"
-
-    # wait for tests to complete
-    test_failed = False
-    for future in as_completed(test_futures):
-        test_name = test_futures[future]
-        if future.result():
-            logger.info("%s completed successfully", test_name)
-        else:
-            logger.error("%s failed", test_name)
-            test_failed = True
-
-    # exit if any test failed
-    if test_failed:
-        sys.exit(1)
+    return builds
 
 
 class TestCase:
     def __init__(
         self,
-        test_root_dir: Path,
+        working_dir: Path,
         config_name: str,
         mp3s: dict[str, dict],
         other_files: list[str],
         debug_files: list[str],
+        mode: str,
     ):
-        self.test_root_dir = test_root_dir
-        self.test_name = config_name.removesuffix(".conf")
-        self.config_path = test_root_dir / f"test_cases/{config_name}"
+        self.working_dir = working_dir
+        self.name = config_name.removesuffix(".conf")
+        self.config_path = working_dir / f"test_cases/{config_name}"
         self.mp3s = mp3s
         self.other_files = other_files
         self.debug_files = debug_files
+        self.is_nfm = "nfm" == mode
 
-    def run(self, name: str, debug: bool):
-        logging.info("running %s with %s", name, self.config_path.name)
+    def run(self, build: Build):
+        label = f"{build.name} with {self.name}"
+        logging.info("running %s", label)
 
-        # make a working dir for the output files to be written to
-        working_dir = (
-            self.test_root_dir / f"{name}_{self.config_path.name.removesuffix('.conf')}"
-        )
-        if working_dir.exists():
-            shutil.rmtree(working_dir)
-        working_dir.mkdir()
-
-        # make the paths
-        binary_path = self.test_root_dir / name / "src/rtl_airband"
+        # make an output dir for the files to be written to
+        output_dir = self.working_dir / f"{build.name}_{self.name}"
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        output_dir.mkdir()
 
         # run the command
         if not run_cmd(
-            f"{binary_path} -c {self.config_path} -F -e",
-            f"running {name} with {self.test_name}",
-            working_dir,
+            f"{build.binary_path} -c {self.config_path} -F -e",
+            label,
+            output_dir,
         ):
             return False
 
         # check the outputs
-        return self.check_outputs(name, working_dir, debug)
-
-    def check_outputs(self, name: str, working_dir: Path, debug: bool) -> bool:
-
-        label = f"{name} with {self.test_name}"
-
         checked_files: set[str] = set()
-
         all_outputs_good = True
 
-        # max time to wait for files to show up
+        # max time to wait for files to show up, the files should be there before
+        # the process exits, but cross-mounted folders in docker containers seem
+        # to cause some delay
         stop_waiting_time = datetime.now() + timedelta(seconds=15)
 
         for filename_pattern, file_info in self.mp3s.items():
@@ -164,11 +202,7 @@ class TestCase:
             expected_sec = file_info["duration"]
             expected_mode = file_info["mode"]
 
-            # wait up to stop_waiting_time for files to show up
-            files = list(working_dir.glob(filename_pattern))
-            while len(files) == 0 and datetime.now() < stop_waiting_time:
-                sleep(1)
-                files = list(working_dir.glob(filename_pattern))
+            files = wait_for_files(output_dir, filename_pattern, stop_waiting_time)
 
             if len(files) != 1:
                 logger.error("%s missing %s", label, filename_pattern)
@@ -216,13 +250,9 @@ class TestCase:
             checked_files.add(files[0].name)
 
         for filename_pattern in (
-            self.other_files + self.debug_files if debug else self.other_files
+            self.other_files + self.debug_files if build.is_debug else self.other_files
         ):
-            # wait up to stop_waiting_time for files to show up
-            files = list(working_dir.glob(filename_pattern))
-            while len(files) == 0 and datetime.now() < stop_waiting_time:
-                sleep(1)
-                files = list(working_dir.glob(filename_pattern))
+            files = wait_for_files(output_dir, filename_pattern, stop_waiting_time)
 
             if len(files) != 1:
                 logger.error("%s missing %s", label, filename_pattern)
@@ -232,7 +262,7 @@ class TestCase:
             checked_files.add(files[0].name)
 
         # make sure all files are accounted for
-        all_files = set([x.name for x in working_dir.glob("*")])
+        all_files = set(x.name for x in output_dir.glob("*"))
 
         if checked_files != all_files:
             logger.error(
@@ -245,28 +275,65 @@ class TestCase:
         return all_outputs_good
 
 
-def load_test_cases(test_root_dir: Path) -> tuple[list[TestCase], list[TestCase]]:
+def do_tests(builds: list[Build], test_config: Path, working_dir: Path):
 
-    test_cases_path = test_root_dir / "test_cases/info.json"
+    # load the test config and extract test cases
+    with open(test_config, "rt", encoding="utf-8") as f:
+        test_cases: dict[str, list[dict[str, Any]]] = json.load(f)["test_cases"]
 
-    assert test_cases_path.exists(), f"{test_cases_path} not found"
+    tests: list[TestCase] = []
+    for mode, test_list in test_cases.items():
+        for info in test_list:
+            tests.append(
+                TestCase(
+                    working_dir,
+                    info["config"],
+                    info.get("mp3_files", {}),
+                    info.get("other_files", []),
+                    info.get("debug_files", []),
+                    mode,
+                )
+            )
+    logger.info("loaded %d test case(s)", len(tests))
 
-    with open(test_cases_path, "rt", encoding="utf-8") as f:
-        test_cases = json.load(f)
+    # kick off all the tests
+    test_futures = {}
+    with ThreadPoolExecutor() as executor:
+        for build in builds:
+            for test in tests:
+                if test.is_nfm and not build.is_nfm:
+                    logger.debug("skipping %s for %s", test.name, build.name)
+                    continue
 
-    return [test_case_from_json(x, test_root_dir) for x in test_cases["am"]], [
-        test_case_from_json(x, test_root_dir) for x in test_cases["nfm"]
-    ]
+                future = executor.submit(test.run, build)
+                test_futures[future] = f"{build.name} {test.name}"
+
+    # wait for tests to complete
+    test_failed = False
+    for future in as_completed(test_futures):
+        test_name = test_futures[future]
+        if future.result():
+            logger.info("%s completed successfully", test_name)
+        else:
+            logger.error("%s failed", test_name)
+            test_failed = True
+
+    # exit if any test failed
+    if test_failed:
+        sys.exit(1)
 
 
-def test_case_from_json(info: dict, test_root_dir) -> TestCase:
-    return TestCase(
-        test_root_dir,
-        info["config"],
-        info.get("mp3_files", {}),
-        info.get("other_files", []),
-        info.get("debug_files", []),
-    )
+def wait_for_files(
+    output_dir: Path, filename_pattern: str, stop_waiting_time: datetime
+) -> list[Path]:
+
+    # wait up to stop_waiting_time for files to show up
+    files = list(output_dir.glob(filename_pattern))
+    while len(files) == 0 and datetime.now() < stop_waiting_time:
+        sleep(1)
+        files = list(output_dir.glob(filename_pattern))
+
+    return files
 
 
 def get_mp3_info(mp3: Path) -> tuple[float, str]:
@@ -296,36 +363,6 @@ def get_mp3_info(mp3: Path) -> tuple[float, str]:
     return duration, mode
 
 
-def build(
-    test_root_dir: Path, name: str, args: list[str], clean: bool, verbose: bool
-) -> bool:
-
-    logger.info("%s build starting . . .", name)
-
-    build_dir = test_root_dir / name
-
-    # clean build directory
-    if clean and build_dir.exists():
-        shutil.rmtree(build_dir)
-
-    # make build directory and call cmake
-    if not build_dir.exists():
-        build_dir.mkdir()
-        if not run_cmd(f"cmake ../../ {' '.join(args)}", f"cmake {name}", build_dir):
-            return False
-
-    # set verbose
-    env = os.environ.copy()
-    if verbose:
-        env["VERBOSE"] = "1"
-
-    # run make
-    if not run_cmd("make -j", f"make {name}", build_dir, env):
-        return False
-
-    return True
-
-
 def run_cmd(cmd: str, description: str, cwd: Path, env=None) -> bool:
     logger.debug("running %s in %s", cmd, cwd)
     result = run(
@@ -352,27 +389,6 @@ def run_cmd(cmd: str, description: str, cwd: Path, env=None) -> bool:
         logger.debug("stdout: %s", line)
     for line in result.stderr.splitlines():
         logger.debug("stderr: %s", line)
-
-    return True
-
-
-def run_signal(test_root_dir: Path, name: str, config: str) -> bool:
-    logging.info("running %s with %s", name, config)
-
-    # make a working dir for the output files to be written to
-    working_dir = test_root_dir / f"{name}_{config.removesuffix('.conf')}"
-    if working_dir.exists():
-        shutil.rmtree(working_dir)
-    working_dir.mkdir()
-
-    # make the paths
-    binary_path = test_root_dir / name / "src/rtl_airband"
-    config_path = test_root_dir / f"test_cases/{config}"
-
-    # run the command
-    run_cmd(
-        f"{binary_path} -c {config_path}", f"running {name} with {config}", working_dir
-    )
 
     return True
 
