@@ -312,8 +312,10 @@ static int open_file(file_data* fdata, mix_modes mixmode, int is_audio) {
 }
 
 static void close_file(output_t* output) {
+    assert(output != NULL);
+
     file_data* fdata = (file_data*)(output->data);
-    if (!fdata) {
+    if (fdata == NULL || fdata->f == NULL) {
         return;
     }
 
