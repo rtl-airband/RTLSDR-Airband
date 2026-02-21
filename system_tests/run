@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from subprocess import run
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from typing import Any
+from typing import Any, Set
 
 
 logging.basicConfig(
@@ -70,8 +70,8 @@ class Build:
         self.build_dir = builds_root_dir / name
         self.args = args
 
-        self.is_debug = "Debug" in name
-        self.is_nfm = "NFM" in name
+        self.is_debug = "-DCMAKE_BUILD_TYPE=Debug" in args
+        self.is_nfm = "-DNFM=TRUE" in args
         self.binary_path = self.build_dir / "src/rtl_airband"
 
         self.build_completed = False
@@ -107,6 +107,9 @@ class Build:
         self.build_completed = True
         return True
 
+    def __repr__(self) -> str:
+        return f"build {self.name} is debug: {self.is_debug}, nfm: {self.is_nfm}, args: {self.args}, build_completed: {self.build_completed}"
+
 
 def do_builds(test_config: Path, working_dir: Path, clean: bool) -> list[Build]:
 
@@ -127,6 +130,9 @@ def do_builds(test_config: Path, working_dir: Path, clean: bool) -> list[Build]:
             for name, args in build_configs.items()
         ]
     logger.info("loaded %s build config(s)", len(builds))
+
+    for build in builds:
+        logger.debug(build)
 
     # kick off all the builds
     build_futures = {}
@@ -153,32 +159,42 @@ def do_builds(test_config: Path, working_dir: Path, clean: bool) -> list[Build]:
 
 
 class TestCase:
+
     def __init__(
         self,
-        working_dir: Path,
-        config_name: str,
+        outputs_root_dir: Path,
+        config_path: Path,
+        data_files: list[Path],
         mp3s: dict[str, dict],
         other_files: list[str],
-        debug_files: list[str],
         mode: str,
     ):
-        self.working_dir = working_dir
-        self.name = config_name.removesuffix(".conf")
-        self.config_path = working_dir / f"test_cases/{config_name}"
+        self.outputs_root_dir = outputs_root_dir
+        self.config_path = config_path
+        self.data_files = data_files
+        self.name = config_path.name.removesuffix(".conf")
         self.mp3s = mp3s
         self.other_files = other_files
-        self.debug_files = debug_files
         self.is_nfm = "nfm" == mode
+
+    def setup_run_dir(self, build: Build) -> Path:
+        # make an output dir for the files to be written to
+        output_dir = self.outputs_root_dir / f"{build.name}_{self.name}"
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        output_dir.mkdir()
+
+        # make a symlink for the data files
+        for data_file in self.data_files:
+            os.symlink(data_file, output_dir / data_file.name)
+
+        return output_dir
 
     def run(self, build: Build):
         label = f"{build.name} with {self.name}"
         logging.info("running %s", label)
 
-        # make an output dir for the files to be written to
-        output_dir = self.working_dir / f"{build.name}_{self.name}"
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        output_dir.mkdir()
+        output_dir = self.setup_run_dir(build)
 
         # run the command
         if not run_cmd(
@@ -188,14 +204,32 @@ class TestCase:
         ):
             return False
 
-        # check the outputs
-        checked_files: set[str] = set()
-        all_outputs_good = True
-
         # max time to wait for files to show up, the files should be there before
         # the process exits, but cross-mounted folders in docker containers seem
         # to cause some delay
         stop_waiting_time = datetime.now() + timedelta(seconds=15)
+
+        checked_mp3_files, mp3s_good = self.check_mp3s(
+            label, output_dir, stop_waiting_time
+        )
+        checked_other_files, other_files_good = self.check_other_files(
+            label, build.is_debug, output_dir, stop_waiting_time
+        )
+
+        extra_files_good = self.check_no_extra_files(
+            label,
+            output_dir,
+            checked_mp3_files.union(checked_other_files),
+        )
+
+        return mp3s_good and other_files_good and extra_files_good
+
+    def check_mp3s(
+        self, label: str, output_dir: Path, stop_waiting_time: datetime
+    ) -> tuple[Set[str], bool]:
+
+        all_outputs_good = True
+        checked_files: set[str] = set()
 
         for filename_pattern, file_info in self.mp3s.items():
 
@@ -249,20 +283,39 @@ class TestCase:
 
             checked_files.add(files[0].name)
 
+        return (checked_files, all_outputs_good)
+
+    def check_other_files(
+        self, label: str, is_debug: bool, output_dir: Path, stop_waiting_time: datetime
+    ) -> tuple[Set[str], bool]:
+
+        all_outputs_good = True
+        checked_files: set[str] = set()
+
         for filename_pattern in (
-            self.other_files + self.debug_files if build.is_debug else self.other_files
+            self.other_files + ["rtl_airband_debug.log"]
+            if is_debug
+            else self.other_files
         ):
             files = wait_for_files(output_dir, filename_pattern, stop_waiting_time)
 
             if len(files) != 1:
                 logger.error("%s missing %s", label, filename_pattern)
                 all_outputs_good = False
+                continue
 
             logger.debug("found %s", files[0])
             checked_files.add(files[0].name)
 
-        # make sure all files are accounted for
+        return (checked_files, all_outputs_good)
+
+    def check_no_extra_files(
+        self, label: str, output_dir: Path, checked_files: set[str]
+    ) -> bool:
+
+        # make sure all files are accounted for, dropping the input data file
         all_files = set(x.name for x in output_dir.glob("*"))
+        all_files.difference_update(x.name for x in self.data_files)
 
         if checked_files != all_files:
             logger.error(
@@ -270,27 +323,35 @@ class TestCase:
                 label,
                 all_files.difference(checked_files),
             )
-            all_outputs_good = False
+            return False
 
-        return all_outputs_good
+        return True
 
 
 def do_tests(builds: list[Build], test_config: Path, working_dir: Path):
 
+    # make root directory for all outputs
+    outputs_root_dir = working_dir / "outputs"
+    if outputs_root_dir.exists():
+        shutil.rmtree(outputs_root_dir)
+    outputs_root_dir.mkdir(parents=True, exist_ok=True)
+
     # load the test config and extract test cases
     with open(test_config, "rt", encoding="utf-8") as f:
         test_cases: dict[str, list[dict[str, Any]]] = json.load(f)["test_cases"]
+
+    test_config_root_dir = test_config.absolute().parent
 
     tests: list[TestCase] = []
     for mode, test_list in test_cases.items():
         for info in test_list:
             tests.append(
                 TestCase(
-                    working_dir,
-                    info["config"],
+                    outputs_root_dir,
+                    test_config_root_dir / info["config"],
+                    [test_config_root_dir / x for x in info["data_files"]],
                     info.get("mp3_files", {}),
                     info.get("other_files", []),
-                    info.get("debug_files", []),
                     mode,
                 )
             )
