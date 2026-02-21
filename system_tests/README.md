@@ -60,7 +60,7 @@ The JSON configuration file defines which builds to compile and which test cases
   - The `.conf` file should reference these files in the current directory (e.g., `"./sample_data.dat"`)
 - `mp3_files`: Expected MP3 output files and their properties
   - Key: glob pattern to match output files (e.g., `"output_*.mp3"`)
-  - `duration`: expected duration in seconds (tolerance: ±1% or ±0.75s, whichever is greater)
+  - `duration`: expected duration in seconds (tolerance: ±5% or ±0.75s, whichever is greater)
   - `mode`: "mono" or "stereo"
 - `other_files`: List of expected output files (not MP3s)
 
