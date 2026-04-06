@@ -839,6 +839,39 @@ static void output_output_overruns(FILE* f) {
     fprintf(f, "\n");
 }
 
+static void output_icecast_delay(FILE* f) {
+    fprintf(f,
+            "# HELP icecast_delay_ms Milliseconds of audio data queued for sending to Icecast.\n"
+            "# TYPE icecast_delay_ms gauge\n");
+
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        for (int j = 0; j < dev->channel_count; j++) {
+            channel_t* channel = devices[i].channels + j;
+            for (int k = 0; k < channel->output_count; k++) {
+                if (channel->outputs[k].type != O_ICECAST)
+                    continue;
+                icecast_data* icecast = (icecast_data*)(channel->outputs[k].data);
+                if (icecast->shout == NULL)
+                    continue;
+                fprintf(f, "icecast_delay_ms{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%d\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_delay(icecast->shout));
+            }
+        }
+    }
+    for (int i = 0; i < mixer_count; i++) {
+        mixer_t* mixer = mixers + i;
+        for (int k = 0; k < mixer->channel.output_count; k++) {
+            if (mixer->channel.outputs[k].type != O_ICECAST)
+                continue;
+            icecast_data* icecast = (icecast_data*)(mixer->channel.outputs[k].data);
+            if (icecast->shout == NULL)
+                continue;
+            fprintf(f, "icecast_delay_ms{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%d\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_delay(icecast->shout));
+        }
+    }
+    fprintf(f, "\n");
+}
+
 static void output_input_overruns(FILE* f) {
     if (mixer_count == 0) {
         return;
@@ -889,6 +922,7 @@ void write_stats_file(timeval* last_stats_write) {
     output_channel_flappy_counter(file);
     output_channel_ctcss_counter(file);
     output_channel_no_ctcss_counter(file);
+    output_icecast_delay(file);
     output_device_buffer_overflows(file);
     output_output_overruns(file);
     output_input_overruns(file);
