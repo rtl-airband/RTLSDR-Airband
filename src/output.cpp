@@ -484,6 +484,10 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
                 continue;
             }
 
+            if (shout_delay(icecast->shout) > 500) {
+                icecast->long_delay_count++;
+            }
+
             int ret = shout_send(icecast->shout, channel->outputs[k].lamebuf, mp3_bytes);
 
             if (ret != SHOUTERR_SUCCESS || shout_queuelen(icecast->shout) > MAX_SHOUT_QUEUELEN) {
@@ -872,6 +876,68 @@ static void output_icecast_delay(FILE* f) {
     fprintf(f, "\n");
 }
 
+static void output_icecast_queuelen(FILE* f) {
+    fprintf(f,
+            "# HELP icecast_queuelen_bytes Bytes queued in libshout send buffer.\n"
+            "# TYPE icecast_queuelen_bytes gauge\n");
+
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        for (int j = 0; j < dev->channel_count; j++) {
+            channel_t* channel = devices[i].channels + j;
+            for (int k = 0; k < channel->output_count; k++) {
+                if (channel->outputs[k].type != O_ICECAST)
+                    continue;
+                icecast_data* icecast = (icecast_data*)(channel->outputs[k].data);
+                if (icecast->shout == NULL)
+                    continue;
+                fprintf(f, "icecast_queuelen_bytes{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_queuelen(icecast->shout));
+            }
+        }
+    }
+    for (int i = 0; i < mixer_count; i++) {
+        mixer_t* mixer = mixers + i;
+        for (int k = 0; k < mixer->channel.output_count; k++) {
+            if (mixer->channel.outputs[k].type != O_ICECAST)
+                continue;
+            icecast_data* icecast = (icecast_data*)(mixer->channel.outputs[k].data);
+            if (icecast->shout == NULL)
+                continue;
+            fprintf(f, "icecast_queuelen_bytes{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_queuelen(icecast->shout));
+        }
+    }
+    fprintf(f, "\n");
+}
+
+static void output_icecast_long_delay(FILE* f) {
+    fprintf(f,
+            "# HELP icecast_long_delay_count Number of times shout_delay exceeded 500ms before sending.\n"
+            "# TYPE icecast_long_delay_count counter\n");
+
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        for (int j = 0; j < dev->channel_count; j++) {
+            channel_t* channel = devices[i].channels + j;
+            for (int k = 0; k < channel->output_count; k++) {
+                if (channel->outputs[k].type != O_ICECAST)
+                    continue;
+                icecast_data* icecast = (icecast_data*)(channel->outputs[k].data);
+                fprintf(f, "icecast_long_delay_count{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, icecast->long_delay_count);
+            }
+        }
+    }
+    for (int i = 0; i < mixer_count; i++) {
+        mixer_t* mixer = mixers + i;
+        for (int k = 0; k < mixer->channel.output_count; k++) {
+            if (mixer->channel.outputs[k].type != O_ICECAST)
+                continue;
+            icecast_data* icecast = (icecast_data*)(mixer->channel.outputs[k].data);
+            fprintf(f, "icecast_long_delay_count{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, icecast->long_delay_count);
+        }
+    }
+    fprintf(f, "\n");
+}
+
 static void output_input_overruns(FILE* f) {
     if (mixer_count == 0) {
         return;
@@ -923,6 +989,8 @@ void write_stats_file(timeval* last_stats_write) {
     output_channel_ctcss_counter(file);
     output_channel_no_ctcss_counter(file);
     output_icecast_delay(file);
+    output_icecast_queuelen(file);
+    output_icecast_long_delay(file);
     output_device_buffer_overflows(file);
     output_output_overruns(file);
     output_input_overruns(file);
