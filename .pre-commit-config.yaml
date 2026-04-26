@@ -3,12 +3,33 @@ repos:
     rev: v4.5.0
     hooks:
     - id: check-yaml
+    - id: check-json
+      exclude: ^\.vscode/launch\.json$  # JSONC format (JSON with comments) used by VS Code
     - id: end-of-file-fixer
     - id: trailing-whitespace
     - id: check-shebang-scripts-are-executable
+    - id: check-merge-conflict
+    - id: check-added-large-files
+    - id: check-case-conflict
+    - id: detect-private-key
 
 - repo: https://github.com/pre-commit/mirrors-clang-format
   rev: v14.0.6
   hooks:
   - id: clang-format
     files: src/.*\.cpp|src/.*\.h
+
+- repo: https://github.com/shellcheck-py/shellcheck-py
+  rev: v0.10.0.1
+  hooks:
+  - id: shellcheck
+    exclude: ^init\.d/  # platform init scripts use OS-specific conventions shellcheck doesn't support
+
+- repo: local
+  hooks:
+  - id: run-tests
+    name: Build and run unit tests (AM and NFM)
+    entry: scripts/run_tests
+    language: script
+    pass_filenames: false
+    files: \.(cpp|h)$|CMakeLists\.txt$|^scripts/run_tests$

@@ -74,25 +74,27 @@ Key CMake flags (all in `src/CMakeLists.txt`):
 Uses clang-format v14 with Chromium style (indent=4, column limit=200, config in `.clang-format`).
 
 ```bash
-# Format all C++ source files
-./scripts/reformat_code
-
 # Install pre-commit hooks (once, after cloning)
 pre-commit install
 
 # Run all pre-commit hooks manually
 pre-commit run --all-files
+
+# Format C++ source files manually (also used by CI)
+./scripts/reformat_code
 ```
 
 Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
-- YAML validity, trailing whitespace, EOF newlines, shebang permissions
+- YAML/JSON validity, trailing whitespace, EOF newlines, shebang permissions, large files, merge conflict markers, private keys
 - clang-format on all `src/*.cpp` and `src/*.h` files
+- shellcheck on all bash scripts (excluding `init.d/`)
+- Build and unit tests (AM and NFM) when `src/*.cpp`, `src/*.h`, or `CMakeLists.txt` are modified (`scripts/run_tests`)
 
 ## CI and Pull Request Checks
 
 Two workflows run on every PR (`.github/workflows/`):
 
-**`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ. Equivalent to running `pre-commit run --all-files` locally.
+**`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
 
 **`ci_build.yml`** — builds and tests four configurations on Ubuntu (x86 and ARM) and macOS:
 ```bash
@@ -103,10 +105,7 @@ cmake -B build_Release_NFM    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNIT
 ```
 Then runs `unittests` for all four, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
 
-**Before submitting a PR**, run the checks that are relevant to the change:
-- Any C++ edit: `./scripts/reformat_code && git diff --exit-code` to verify formatting
-- Logic/DSP changes: build and run `unittests` for both AM and NFM variants
-- Build system or config changes: verify all four cmake configurations build cleanly
+**Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
 
 ## Architecture
 
