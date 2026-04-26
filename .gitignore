@@ -3,3 +3,6 @@ build*/
 .cache
 compile_commands.json
 rtl_airband*.log
+
+# Claude Code - personal overrides (team settings go in .claude/settings.json)
+.claude/settings.local.json

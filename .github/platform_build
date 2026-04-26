@@ -4,30 +4,31 @@ platform="${1}"
 
 if [ -z "${platform}" ]; then
     echo "Error: platform not set"
-    exit -1
+    exit 1
 fi
 
+# shellcheck disable=SC1091,SC2086  # /etc/os-release is a runtime system file; VERSION needs word splitting
 echo "running build for ${platform} on $(source /etc/os-release ; echo ${VERSION})"
 
 case "${platform}" in
     rpi3b)
-        CMAKE_ARGS="-DPLATFORM=rpiv2 -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE"
+        CMAKE_ARGS=(-DPLATFORM=rpiv2 -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE)
         ;;
     ubuntu-22.04-arm)
-        CMAKE_ARGS="-DPLATFORM=native -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE"
+        CMAKE_ARGS=(-DPLATFORM=native -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE)
         ;;
 
     *)
         echo "Error: Platform '${platform}' not supported"
-        exit -1
+        exit 1
 esac
 
 # make a build dir
 rm -rf build || true ; mkdir build
-cd build
+cd build || exit
 
 # configure and build
-cmake ${CMAKE_ARGS} ../
+cmake "${CMAKE_ARGS[@]}" ../
 VERBOSE=1 make -j
 
 # run unit tests

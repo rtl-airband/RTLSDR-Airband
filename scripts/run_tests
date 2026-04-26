@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." || exit; pwd)"
+
+BUILD_AM="${REPO_ROOT}/build_test"
+BUILD_NFM="${REPO_ROOT}/build_test_nfm"
+
+echo "=== Configuring AM build ==="
+cmake -B "${BUILD_AM}" -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring NFM build ==="
+cmake -B "${BUILD_NFM}" -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Building AM ==="
+cmake --build "${BUILD_AM}" -j
+
+echo "=== Building NFM ==="
+cmake --build "${BUILD_NFM}" -j
+
+echo "=== Running AM unit tests ==="
+"${BUILD_AM}/src/unittests"
+
+echo "=== Running NFM unit tests ==="
+"${BUILD_NFM}/src/unittests"
+
+echo "=== All tests passed ==="
