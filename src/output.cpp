@@ -249,7 +249,18 @@ int rename_if_exists(char const* oldpath, char const* newpath) {
  */
 static int open_file(file_data* fdata, mix_modes mixmode, int is_audio) {
     int rename_result = rename_if_exists(fdata->file_path.c_str(), fdata->file_path_tmp.c_str());
-    fdata->f = fopen(fdata->file_path_tmp.c_str(), fdata->append ? "a+" : "w");
+    if (fdata->append) {
+        // Open without O_APPEND so fseek+fwrite works correctly (e.g. for the lametag).
+        // Try r+ (existing file) first; fall back to w (new file) if it doesn't exist yet.
+        fdata->f = fopen(fdata->file_path_tmp.c_str(), "r+");
+        if (fdata->f == NULL) {
+            fdata->f = fopen(fdata->file_path_tmp.c_str(), "w");
+        } else {
+            fseek(fdata->f, 0, SEEK_END);
+        }
+    } else {
+        fdata->f = fopen(fdata->file_path_tmp.c_str(), "w");
+    }
     if (fdata->f == NULL) {
         return -1;
     }
@@ -930,7 +941,7 @@ void* output_thread(void* param) {
 #endif /* DEBUG */
         for (int i = output_param->device_start; i < output_param->device_end; i++) {
             device_t* dev = devices + i;
-            if (dev->input->state == INPUT_RUNNING && dev->waveavail) {
+            if (dev->waveavail) {
                 if (dev->mode == R_SCAN) {
                     tag_queue_get(dev, &tag);
                     if (tag.freq >= 0) {
@@ -957,6 +968,29 @@ void* output_thread(void* param) {
             write_stats_file(&last_stats_write);
         }
     }
+
+    // waveavail=1 set by the demod just before do_exit may have been missed if
+    // the final pthread_cond_signal fired while the output thread was busy (signal
+    // lost) or if do_exit was checked before the signal was consumed.
+    for (int i = output_param->device_start; i < output_param->device_end; i++) {
+        device_t* dev = devices + i;
+        if (!dev->waveavail)
+            continue;
+        for (int j = 0; j < dev->channel_count; j++) {
+            channel_t* channel = devices[i].channels + j;
+            process_outputs(channel, -1);
+            memcpy(channel->waveout, channel->waveout + WAVE_BATCH, AGC_EXTRA * 4);
+        }
+        dev->waveavail = 0;
+    }
+
+    // Final stats flush: do_exit=1 bypasses the 15s throttle, so this always
+    // writes regardless of run duration. Called after the post-loop flush above
+    // so counters reflect all processed output.
+    if (output_param->device_start == 0) {
+        write_stats_file(&last_stats_write);
+    }
+
     return 0;
 }
 

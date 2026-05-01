@@ -25,6 +25,7 @@
 #include <string.h>
 #include <syslog.h>         // FIXME: get rid of this
 #include <unistd.h>         // usleep
+#include <cmath>            // round
 #include <libconfig.h++>    // Setting
 #include "input-common.h"   // input_t, sample_format_t, input_state_t, MODULE_EXPORT
 #include "input-helpers.h"  // circbuffer_append
@@ -88,12 +89,18 @@ void* file_rx_thread(void* ctx) {
     assert(dev_data->input_file != NULL);
     assert(dev_data->speedup_factor != 0.0);
 
-    size_t buf_len = (input->buf_size / 2) - 1;
+    // Read at most one audio batch worth of input data per chunk so the demod
+    // never accumulates more than one batch before the output thread runs (ie overwrite).
+    size_t bps_per_iter = 2 * input->bytes_per_sample * (size_t)round((double)input->sample_rate / (double)WAVE_RATE);
+    size_t one_batch_bytes = (size_t)WAVE_BATCH * bps_per_iter;
+    size_t max_buf_len = (input->buf_size / 2) - 1;
+    size_t buf_len = (one_batch_bytes < max_buf_len) ? one_batch_bytes : max_buf_len;
     unsigned char* buf = (unsigned char*)XCALLOC(1, buf_len);
 
     float time_per_byte_ms = 1000 / (input->sample_rate * input->bytes_per_sample * 2 * dev_data->speedup_factor);
 
-    log(LOG_DEBUG, "sample_rate: %d, bytes_per_sample: %d, speedup_factor: %f, time_per_byte_ms: %f\n", input->sample_rate, input->bytes_per_sample, dev_data->speedup_factor, time_per_byte_ms);
+    log(LOG_DEBUG, "sample_rate: %d, bytes_per_sample: %d, speedup_factor: %f, time_per_byte_ms: %f, buf_len: %zu\n", input->sample_rate, input->bytes_per_sample, dev_data->speedup_factor,
+        time_per_byte_ms, buf_len);
 
     input->state = INPUT_RUNNING;
 

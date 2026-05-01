@@ -1,8 +1,10 @@
-build*/
 .DS_Store
 .cache
+__pycache__
 compile_commands.json
 rtl_airband*.log
+build/
+builds/
 
 # Claude Code - personal overrides (team settings go in .claude/settings.json)
 .claude/settings.local.json

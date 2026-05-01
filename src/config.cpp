@@ -98,9 +98,9 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
 
             channel->outputs[oo].has_mp3_output = true;
         } else if (!strncmp(outs[o]["type"], "file", 4)) {
-            channel->outputs[oo].data = XCALLOC(1, sizeof(struct file_data));
+            file_data* fdata = new file_data();
+            channel->outputs[oo].data = fdata;
             channel->outputs[oo].type = O_FILE;
-            file_data* fdata = (file_data*)(channel->outputs[oo].data);
 
             fdata->type = O_FILE;
             if (!outs[o].exists("directory") || !outs[o].exists("filename_template")) {
@@ -140,9 +140,9 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 cerr << "Configuration error: mixers.[" << i << "] outputs[" << o << "]: rawfile output is not allowed for mixers\n";
                 error();
             }
-            channel->outputs[oo].data = XCALLOC(1, sizeof(struct file_data));
+            file_data* fdata = new file_data();
+            channel->outputs[oo].data = fdata;
             channel->outputs[oo].type = O_RAWFILE;
-            file_data* fdata = (file_data*)(channel->outputs[oo].data);
 
             fdata->type = O_RAWFILE;
             if (!outs[o].exists("directory") || !outs[o].exists("filename_template")) {

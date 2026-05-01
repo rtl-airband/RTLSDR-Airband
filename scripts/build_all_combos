@@ -1,0 +1,35 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." || exit; pwd)"
+
+BUILD_AM="${REPO_ROOT}/builds/Debug"
+BUILD_NFM="${REPO_ROOT}/builds/Debug_nfm"
+BUILD_AM_RELEASE="${REPO_ROOT}/builds/Release"
+BUILD_NFM_RELEASE="${REPO_ROOT}/builds/Release_nfm"
+
+echo "=== Configuring AM Debug build ==="
+cmake -B "${BUILD_AM}" -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring NFM Debug build ==="
+cmake -B "${BUILD_NFM}" -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring AM Release build ==="
+cmake -B "${BUILD_AM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring NFM Release build ==="
+cmake -B "${BUILD_NFM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Building AM Debug ==="
+cmake --build "${BUILD_AM}" -j
+
+echo "=== Building NFM Debug ==="
+cmake --build "${BUILD_NFM}" -j
+
+echo "=== Building AM Release ==="
+cmake --build "${BUILD_AM_RELEASE}" -j
+
+echo "=== Building NFM Release ==="
+cmake --build "${BUILD_NFM_RELEASE}" -j
+
+echo "=== Build complete ==="

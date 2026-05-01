@@ -1,4 +1,4 @@
-name: Run CI
+name: System Tests
 
 on:
   push:
@@ -7,10 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: '39 13 * * *' # run daily
+    - cron: '39 13 * * *'
 
 jobs:
-  ci_build:
+  system_tests:
+    name: System Tests (${{ matrix.os }})
     strategy:
       matrix:
         os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm ]
@@ -34,8 +35,19 @@ jobs:
     - name: Unit Tests
       run: scripts/run_unit_tests
 
-    - name: Install
-      run: sudo cmake --install ${{github.workspace}}/builds/Release
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
 
-    - name: Test run
-      run: /usr/local/bin/rtl_airband -v
+    - name: Install Python
+      run: uv python install 3.11
+
+    - name: Install test dependencies
+      run: uv sync
+
+    - name: Run system tests
+      run: |
+        uv run pytest system_tests/tests/ \
+          --binary builds/Release/src/rtl_airband \
+          --nfm-binary builds/Release_nfm/src/rtl_airband \
+          --mode thorough \
+          -v

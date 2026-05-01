@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." || exit; pwd)"
+
+"${REPO_ROOT}/scripts/build_all_combos"
+
+BUILD_AM="${REPO_ROOT}/builds/Debug"
+BUILD_NFM="${REPO_ROOT}/builds/Debug_nfm"
+BUILD_AM_RELEASE="${REPO_ROOT}/builds/Release"
+BUILD_NFM_RELEASE="${REPO_ROOT}/builds/Release_nfm"
+
+# ---------------------------------------------------------------------------
+# C++ unit tests
+# ---------------------------------------------------------------------------
+echo "=== Running AM Debug unit tests ==="
+"${BUILD_AM}/src/unittests"
+
+echo "=== Running NFM Debug unit tests ==="
+"${BUILD_NFM}/src/unittests"
+
+echo "=== Running AM Release unit tests ==="
+"${BUILD_AM_RELEASE}/src/unittests"
+
+echo "=== Running NFM Release unit tests ==="
+"${BUILD_NFM_RELEASE}/src/unittests"
+
+echo "=== Build and unit tests passed ==="
