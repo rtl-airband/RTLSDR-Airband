@@ -27,6 +27,11 @@ SQUELCH = 0.0  # disabled — CTCSS gate is the only gate
 CONFIG_CTCSS_HZ = 100.0  # what the config requests
 CORRECT_CTCSS_HZ = 100.0  # matches the config → should pass
 WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should block
+# The CTCSS detector needs ~2 s of tone before it opens the gate (fast detector:
+# 0.05 s windows × ~40 confirmations at 8 kHz audio rate; see ctcss.cpp).
+# Adjust this constant if the detector's startup latency changes.
+CTCSS_STARTUP_DELAY_S = 2.0
+EXPECTED_AUDIO_S = DURATION_S - CTCSS_STARTUP_DELAY_S  # 13.0 s
 TIMEOUT_S = DURATION_S * 3 + 30  # 75s
 
 
@@ -86,11 +91,10 @@ def test_ctcss_correct_tone(
 
     run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    # Use 13s expected (not 15s) to account for ~2s CTCSS detection startup delay
     output_validator.validate_rawfile(
         output_dir=test_output_dir,
         filename_template=filename_template,
-        expected_duration_s=13.0,
+        expected_duration_s=EXPECTED_AUDIO_S,
         wave_rate=binary_under_test.wave_rate,
         tolerance=rawfile_tolerance,
     )
@@ -98,7 +102,7 @@ def test_ctcss_correct_tone(
     output_validator.validate_mp3(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
-        expected_duration_s=13.0,
+        expected_duration_s=EXPECTED_AUDIO_S,
         tolerance=mp3_tolerance,
     )
 

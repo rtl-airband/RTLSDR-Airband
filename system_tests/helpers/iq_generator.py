@@ -12,11 +12,15 @@ import numpy as np
 SAMPLE_RATE = 2_048_000  # Hz — common RTL-SDR rate
 CENTERFREQ = 120_000_000  # Hz — aviation band (used in config, not physics)
 
-# In scan mode rtl_airband always demodulates from a fixed FFT bin, computed as:
-#   bin = fft_size - 21  (for DEFAULT_FFT_SIZE_LOG=9, fft_size=512 → bin 491)
-# That bin corresponds to an offset of -(21 × bin_resolution) = -84 kHz from the
-# IQ file center, regardless of which scan frequency is "active".  Signals in
-# scan-mode test fixtures must sit at this offset so the scanner can detect them.
+# In scan mode, rtl_airband tunes the hardware center to (target_freq + 20 * bin_resolution).
+# Combined with the -1.0 correction in the bin formula, the target frequency always lands at
+# bin (fft_size - 21).  For the default fft_size=512 that is bin 491, which sits at offset
+# -(21 × bin_resolution) = -84 kHz from center.
+#
+# If DEFAULT_FFT_SIZE_LOG or the +20 tuning offset in ever change, update _FFT_SIZE and the
+# formula below to match — stale values will silently place the signal at the wrong bin and
+# scan tests will fail with unexpected rawfile sizes. Delete .generated_input/ after any
+# such change so fixtures are regenerated.
 _FFT_SIZE = 512  # 1 << DEFAULT_FFT_SIZE_LOG
 _BIN_RES_HZ = SAMPLE_RATE // _FFT_SIZE  # 4 000 Hz per bin
 SCAN_DEMOD_OFFSET_HZ = -21 * _BIN_RES_HZ  # -84 000 Hz

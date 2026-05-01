@@ -12,6 +12,11 @@ Each test:
 
 IQ fixtures are cached in `.generated_input/` and reused across runs. Test outputs land in `test_output/<test-name>/` and are kept for debugging.
 
+> **Cache invalidation**: the cache key is the fixture parameters (frequency offset, duration, etc.), not the generator code. If the signal generation logic in `helpers/iq_generator.py` is changed (e.g., to fix a bug), delete `.generated_input/` to force regeneration:
+> ```bash
+> rm -rf system_tests/.generated_input/
+> ```
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) — Python package manager
@@ -184,6 +189,34 @@ The binary expects raw U8 IQ: interleaved 8-bit unsigned integers, I first then 
 byte 0: I[0]   byte 1: Q[0]   byte 2: I[1]   byte 3: Q[1]  ...
 ```
 
+### Capturing a recording with rtl_sdr
+
+Use `rtl_sdr` to record directly to a `.iq` file:
+
+```bash
+sudo rtl_sdr -f 151102500 -g 7.7 -s 2400000 -d 0 -p -1 recording.iq
+```
+
+| Flag | Value | Meaning |
+|------|-------|---------|
+| `-f` | `151102500` | Center frequency in Hz (151.1025 MHz here) |
+| `-g` | `7.7` | Tuner gain in dB (`0` for auto-gain) |
+| `-s` | `2400000` | Sample rate in Hz (must be > 16000; 2.4 MHz shown) |
+| `-d` | `0` | Device index (if you have multiple RTL-SDR dongles) |
+| `-p` | `-1` | PPM frequency correction for your dongle |
+
+Press Ctrl-C to stop. Then reference the file in your test JSON:
+
+```json
+{
+  "iq_file": "recording.iq",
+  "sample_rate": 2400000,
+  "centerfreq_hz": 151102500
+}
+```
+
+Set `centerfreq_hz` and `sample_rate` in the JSON to match the `-f` and `-s` values you used when capturing.
+
 ## Python Tooling
 
 ```bash
@@ -198,3 +231,7 @@ uv run pylint conftest.py helpers/ tests/
 ```
 
 Configuration for all three tools lives in `pyproject.toml`.
+
+## Pre-commit Hooks
+
+The pre-commit hooks for Python files (`black`, `isort`, `pylint`) are configured with `language: system` and invoke `uv run ...`. This means **`uv` must be in your `PATH`** when pre-commit runs. If you installed `uv` via the official installer it lands in `~/.local/bin/uv` — make sure that is on your PATH, or run `pre-commit` from inside the devcontainer (where `uv` is always available at `/usr/local/bin/uv`).

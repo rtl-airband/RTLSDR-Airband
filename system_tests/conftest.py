@@ -161,19 +161,12 @@ def test_output_dir(request: pytest.FixtureRequest, _test_output_dir: Path) -> P
 
 
 @pytest.fixture(scope="session")
-def am_binaries(
-    request: pytest.FixtureRequest,
-    binary: Path,
-    nfm_binary: Path | None,
-) -> list[BinaryUnderTest]:
+def am_binaries(request: pytest.FixtureRequest) -> list[BinaryUnderTest]:
     """
     Returns a list of BinaryUnderTest instances for parametrizing AM tests.
-    Always includes the non-NFM binary; adds the NFM binary if --nfm-binary was provided.
+    Reads the list built by pytest_configure to avoid duplicating that logic.
     """
-    result = [BinaryUnderTest(path=binary, wave_rate=8000, label="non-nfm")]
-    if nfm_binary is not None:
-        result.append(BinaryUnderTest(path=nfm_binary, wave_rate=16000, label="nfm"))
-    return result
+    return request.config._rtlsdr_am_binaries
 
 
 @pytest.fixture(scope="session")

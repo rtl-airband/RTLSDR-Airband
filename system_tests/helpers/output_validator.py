@@ -51,7 +51,7 @@ def validate_rawfile(
     output_file = matches[0]
     actual_bytes = output_file.stat().st_size
 
-    # expected_bytes = duration * wave_rate * 2 channels * 4 bytes per float32
+    # expected_bytes = duration * wave_rate * 2 (I+Q pair) * 4 bytes per float32
     expected_bytes = expected_duration_s * wave_rate * 2 * 4
 
     deviation = abs(actual_bytes - expected_bytes) / expected_bytes
@@ -97,7 +97,7 @@ def validate_mp3(
     mp3_dir: Path,
     filename_template: str,
     expected_duration_s: float,
-    tolerance: float = 0.20,
+    tolerance: float,
 ) -> Path:
     """
     Assert that an MP3 output exists with expected duration and valid audio properties.
