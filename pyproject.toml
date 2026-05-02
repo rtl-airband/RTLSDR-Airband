@@ -6,10 +6,30 @@ dependencies = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
     "pytest-xdist>=3.0",
-    "numpy>=1.24",
+    "numpy>=2.0",
     "scipy>=1.10",
     "mutagen>=1.45",
 ]
+
+[tool.uv]
+environments = [
+    "platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "platform_machine == 'armv7l' and sys_platform == 'linux'",
+    "platform_machine == 'armv6l' and sys_platform == 'linux'",
+]
+
+[tool.uv.sources]
+numpy = [
+    { index = "piwheels", marker = "platform_machine == 'armv7l' or platform_machine == 'armv6l'" },
+]
+scipy = [
+    { index = "piwheels", marker = "platform_machine == 'armv7l' or platform_machine == 'armv6l'" },
+]
+
+[[tool.uv.index]]
+name = "piwheels"
+url = "https://www.piwheels.org/simple"
+explicit = true
 
 [tool.pytest.ini_options]
 timeout = 120
@@ -24,7 +44,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "black>=26.3.1",
+    "black>=24.0",
     "isort>=8.0.1",
     "pylint>=4.0.5",
 ]

@@ -13,7 +13,10 @@ jobs:
   ci_build:
     strategy:
       matrix:
-        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm ]
+        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm, rpi3b ]
+        include:
+          - os: rpi3b
+            platform: rpiv2
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35 # runtime across all OSs, runs can get queued
     steps:
@@ -30,9 +33,13 @@ jobs:
 
     - name: Build
       run: VERBOSE=1 scripts/build_all_combos
+      env:
+        CMAKE_PLATFORM: ${{ matrix.platform || 'native' }}
 
     - name: Unit Tests
       run: scripts/run_unit_tests
+      env:
+        CMAKE_PLATFORM: ${{ matrix.platform || 'native' }}
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
@@ -40,12 +47,9 @@ jobs:
     - name: Install Python
       run: uv python install 3.11
 
-    - name: Install system test dependencies
-      run: uv sync
-
     - name: Run system tests
       run: |
-        uv run pytest system_tests/tests/ \
+        uv run --no-group dev pytest system_tests/tests/ \
           --binary builds/Release/src/rtl_airband \
           --nfm-binary builds/Release_nfm/src/rtl_airband \
           --mode thorough \

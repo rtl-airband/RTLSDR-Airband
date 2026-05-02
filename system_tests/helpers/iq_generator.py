@@ -25,11 +25,19 @@ _FFT_SIZE = 512  # 1 << DEFAULT_FFT_SIZE_LOG
 _BIN_RES_HZ = SAMPLE_RATE // _FFT_SIZE  # 4 000 Hz per bin
 SCAN_DEMOD_OFFSET_HZ = -21 * _BIN_RES_HZ  # -84 000 Hz
 
+_TWO_PI = np.float32(2 * np.pi)
+_SCALE = np.float32(0.5 * 127.5)
+_ORIGIN = np.float32(128)
+
 
 def _write_iq(path: Path, I_u8: np.ndarray, Q_u8: np.ndarray) -> None:
     """Interleave I/Q arrays and write as raw bytes."""
     iq = np.column_stack([I_u8, Q_u8]).flatten()
     path.write_bytes(iq.tobytes())
+
+
+def _quantize(signal: np.ndarray, scale: np.float32 = _SCALE) -> np.ndarray:
+    return np.clip(np.round(_ORIGIN + signal * scale), 0, 255).astype(np.uint8)
 
 
 def get_or_generate_am(
@@ -48,16 +56,16 @@ def get_or_generate_am(
         return path
 
     num_samples = int(SAMPLE_RATE * duration_s)
-    t = np.arange(num_samples) / SAMPLE_RATE
-    audio = np.sin(2 * np.pi * audio_hz * t)
-    envelope = 1.0 + 0.8 * audio  # 80% modulation index
-    carrier_phase = 2 * np.pi * offset_hz * t
+    t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
+    audio = np.sin(_TWO_PI * np.float32(audio_hz) * t)
+    envelope = np.float32(1.0) + np.float32(0.8) * audio
+    del audio
+    carrier_phase = _TWO_PI * np.float32(offset_hz) * t
+    del t
     I = envelope * np.cos(carrier_phase)
     Q = envelope * np.sin(carrier_phase)
-    scale = 0.5 * 127.5
-    I_u8 = np.clip(np.round(128 + I * scale), 0, 255).astype(np.uint8)
-    Q_u8 = np.clip(np.round(128 + Q * scale), 0, 255).astype(np.uint8)
-    _write_iq(path, I_u8, Q_u8)
+    del carrier_phase, envelope
+    _write_iq(path, _quantize(I), _quantize(Q))
     return path
 
 
@@ -76,10 +84,11 @@ def get_or_generate_noise(
 
     num_samples = int(SAMPLE_RATE * duration_s)
     rng = np.random.default_rng(seed=42)
-    I = rng.normal(0, 0.02 * 127.5, num_samples)
-    Q = rng.normal(0, 0.02 * 127.5, num_samples)
-    I_u8 = np.clip(np.round(128 + I), 0, 255).astype(np.uint8)
-    Q_u8 = np.clip(np.round(128 + Q), 0, 255).astype(np.uint8)
+    amplitude = np.float32(0.02 * 127.5)
+    I = rng.standard_normal(num_samples, dtype=np.float32) * amplitude
+    Q = rng.standard_normal(num_samples, dtype=np.float32) * amplitude
+    I_u8 = np.clip(np.round(_ORIGIN + I), 0, 255).astype(np.uint8)
+    Q_u8 = np.clip(np.round(_ORIGIN + Q), 0, 255).astype(np.uint8)
     _write_iq(path, I_u8, Q_u8)
     return path
 
@@ -102,17 +111,18 @@ def get_or_generate_ctcss(
         return path
 
     num_samples = int(SAMPLE_RATE * duration_s)
-    t = np.arange(num_samples) / SAMPLE_RATE
-    # Mix CTCSS sub-audible tone with voice tone
-    audio = 0.3 * np.sin(2 * np.pi * ctcss_hz * t) + 0.7 * np.sin(2 * np.pi * 1000 * t)
-    envelope = 1.0 + 0.8 * audio  # 80% modulation index
-    carrier_phase = 2 * np.pi * offset_hz * t
+    t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
+    audio = np.float32(0.3) * np.sin(_TWO_PI * np.float32(ctcss_hz) * t) + np.float32(
+        0.7
+    ) * np.sin(_TWO_PI * np.float32(1000) * t)
+    envelope = np.float32(1.0) + np.float32(0.8) * audio
+    del audio
+    carrier_phase = _TWO_PI * np.float32(offset_hz) * t
+    del t
     I = envelope * np.cos(carrier_phase)
     Q = envelope * np.sin(carrier_phase)
-    scale = 0.5 * 127.5
-    I_u8 = np.clip(np.round(128 + I * scale), 0, 255).astype(np.uint8)
-    Q_u8 = np.clip(np.round(128 + Q * scale), 0, 255).astype(np.uint8)
-    _write_iq(path, I_u8, Q_u8)
+    del carrier_phase, envelope
+    _write_iq(path, _quantize(I), _quantize(Q))
     return path
 
 
@@ -133,17 +143,19 @@ def get_or_generate_nfm(
 
     deviation = 3000  # Hz, narrow FM ±3 kHz
     num_samples = int(SAMPLE_RATE * duration_s)
-    t = np.arange(num_samples) / SAMPLE_RATE
-    audio = np.sin(2 * np.pi * audio_hz * t)
-    # FM phase modulation: integrate instantaneous frequency to get phase
-    instantaneous_freq = offset_hz + deviation * audio
-    phase = 2 * np.pi * np.cumsum(instantaneous_freq) / SAMPLE_RATE
-    I = np.cos(phase)
-    Q = np.sin(phase)
-    scale = 0.5 * 127.5
-    I_u8 = np.clip(np.round(128 + I * scale), 0, 255).astype(np.uint8)
-    Q_u8 = np.clip(np.round(128 + Q * scale), 0, 255).astype(np.uint8)
-    _write_iq(path, I_u8, Q_u8)
+    t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
+    audio = np.sin(_TWO_PI * np.float32(audio_hz) * t)
+    del t
+    instantaneous_freq = np.float32(offset_hz) + np.float32(deviation) * audio
+    del audio
+    # FM phase modulation: integrate instantaneous frequency to get phase.
+    # cumsum must use float64 to avoid phase drift over millions of samples.
+    phase = _TWO_PI * np.cumsum(instantaneous_freq, dtype=np.float64) / SAMPLE_RATE
+    del instantaneous_freq
+    I = np.cos(phase).astype(np.float32)
+    Q = np.sin(phase).astype(np.float32)
+    del phase
+    _write_iq(path, _quantize(I), _quantize(Q))
     return path
 
 
@@ -168,27 +180,18 @@ def get_or_generate_multichannel(
         return path
 
     num_samples = int(SAMPLE_RATE * duration_s)
-    t = np.arange(num_samples) / SAMPLE_RATE
-    audio = np.sin(2 * np.pi * audio_hz * t)
-    envelope = 1.0 + 0.8 * audio
-
-    # Channel A
-    carrier_phase_a = 2 * np.pi * offset_a_hz * t
-    I_a = envelope * np.cos(carrier_phase_a)
-    Q_a = envelope * np.sin(carrier_phase_a)
-
-    # Channel B
-    carrier_phase_b = 2 * np.pi * offset_b_hz * t
-    I_b = envelope * np.cos(carrier_phase_b)
-    Q_b = envelope * np.sin(carrier_phase_b)
-
-    # Sum both channels and scale — divide by 2 to avoid overflow
-    I = (I_a + I_b) / 2.0
-    Q = (Q_a + Q_b) / 2.0
-    scale = 0.5 * 127.5
-    I_u8 = np.clip(np.round(128 + I * scale), 0, 255).astype(np.uint8)
-    Q_u8 = np.clip(np.round(128 + Q * scale), 0, 255).astype(np.uint8)
-    _write_iq(path, I_u8, Q_u8)
+    t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
+    audio = np.sin(_TWO_PI * np.float32(audio_hz) * t)
+    envelope = np.float32(1.0) + np.float32(0.8) * audio
+    del audio
+    carrier_phase_a = _TWO_PI * np.float32(offset_a_hz) * t
+    carrier_phase_b = _TWO_PI * np.float32(offset_b_hz) * t
+    del t
+    # Combine both channels directly to avoid holding four separate channel arrays.
+    I = envelope * (np.cos(carrier_phase_a) + np.cos(carrier_phase_b)) * np.float32(0.5)
+    Q = envelope * (np.sin(carrier_phase_a) + np.sin(carrier_phase_b)) * np.float32(0.5)
+    del carrier_phase_a, carrier_phase_b, envelope
+    _write_iq(path, _quantize(I), _quantize(Q))
     return path
 
 
@@ -218,27 +221,28 @@ def get_or_generate_scan(
     if path.exists():
         return path
 
-    scale = 0.5 * 127.5
     rng = np.random.default_rng(seed=42)
 
     def _am_segment(duration_s: float) -> tuple[np.ndarray, np.ndarray]:
         n = int(SAMPLE_RATE * duration_s)
-        t = np.arange(n) / SAMPLE_RATE
-        audio = np.sin(2 * np.pi * 1000 * t)
-        envelope = 1.0 + 0.8 * audio
-        carrier_phase = 2 * np.pi * SCAN_DEMOD_OFFSET_HZ * t
+        t = np.linspace(0, duration_s, n, dtype=np.float32, endpoint=False)
+        audio = np.sin(_TWO_PI * np.float32(1000) * t)
+        envelope = np.float32(1.0) + np.float32(0.8) * audio
+        del audio
+        carrier_phase = _TWO_PI * np.float32(SCAN_DEMOD_OFFSET_HZ) * t
+        del t
         I = envelope * np.cos(carrier_phase)
         Q = envelope * np.sin(carrier_phase)
-        I_u8 = np.clip(np.round(128 + I * scale), 0, 255).astype(np.uint8)
-        Q_u8 = np.clip(np.round(128 + Q * scale), 0, 255).astype(np.uint8)
-        return I_u8, Q_u8
+        del carrier_phase, envelope
+        return _quantize(I), _quantize(Q)
 
     def _noise_segment(duration_s: float) -> tuple[np.ndarray, np.ndarray]:
         n = int(SAMPLE_RATE * duration_s)
-        I = rng.normal(0, 0.02 * 127.5, n)
-        Q = rng.normal(0, 0.02 * 127.5, n)
-        I_u8 = np.clip(np.round(128 + I), 0, 255).astype(np.uint8)
-        Q_u8 = np.clip(np.round(128 + Q), 0, 255).astype(np.uint8)
+        amplitude = np.float32(0.02 * 127.5)
+        I = rng.standard_normal(n, dtype=np.float32) * amplitude
+        Q = rng.standard_normal(n, dtype=np.float32) * amplitude
+        I_u8 = np.clip(np.round(_ORIGIN + I), 0, 255).astype(np.uint8)
+        Q_u8 = np.clip(np.round(_ORIGIN + Q), 0, 255).astype(np.uint8)
         return I_u8, Q_u8
 
     I_a, Q_a = _am_segment(duration_a_s)

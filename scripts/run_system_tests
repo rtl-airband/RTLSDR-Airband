@@ -22,8 +22,7 @@ fi
 
 echo "=== Running system tests ==="
 cd "${REPO_ROOT}" || exit 1
-"$UV" sync --quiet
-"$UV" run pytest system_tests/tests/ \
+"$UV" run --no-group dev pytest system_tests/tests/ \
     --binary "${BUILD_AM_RELEASE}/src/rtl_airband" \
     --nfm-binary "${BUILD_NFM_RELEASE}/src/rtl_airband" \
     --mode fast \
