@@ -17,6 +17,8 @@ import pytest
 CACHE_DIR = Path(__file__).parent / ".generated_input"
 TEST_OUTPUT_DIR = Path(__file__).parent / "test_output"
 
+_use_sudo: bool = False
+
 
 # ---------------------------------------------------------------------------
 # CLI options
@@ -40,6 +42,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             "Test mode: 'fast' (25%% tolerances, 10x speedup, use with -n auto for parallel) "
             "or 'thorough' (15%% tolerances, 1x speedup, serial)"
         ),
+    )
+    parser.addoption(
+        "--sudo",
+        action="store_true",
+        default=False,
+        help="Invoke rtl_airband via sudo (required when BCM VideoCore GPU FFT is enabled)",
     )
 
 
@@ -67,6 +75,12 @@ def pytest_configure(config: pytest.Config) -> None:
     pytest_generate_tests hooks in individual test modules can access it
     during collection (before session fixtures run).
     """
+    global _use_sudo  # pylint: disable=global-statement
+    try:
+        _use_sudo = bool(config.getoption("--sudo"))
+    except ValueError:
+        pass
+
     binary_val = None
     nfm_val = None
     try:
@@ -203,7 +217,13 @@ def run_rtl_airband(
     Captures stdout and stderr. On timeout, re-raises with captured stderr.
     Asserts returncode == 0, including stderr in the assertion message on failure.
     """
-    cmd = [str(binary), "-F", "-e", "-c", str(config_path)]
+    cmd = (["sudo"] if _use_sudo else []) + [
+        str(binary),
+        "-F",
+        "-e",
+        "-c",
+        str(config_path),
+    ]
     try:
         result = subprocess.run(
             cmd,

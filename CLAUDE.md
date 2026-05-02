@@ -94,7 +94,7 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 
 ## CI and Pull Request Checks
 
-Two workflows run on every PR (`.github/workflows/`):
+Three workflows run on every PR (`.github/workflows/`):
 
 **`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
 
@@ -106,6 +106,8 @@ cmake -B builds/Release        -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
 cmake -B builds/Release_nfm    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
 ```
 Then runs `unittests` for all four, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
+
+**`platform_build.yml`** — builds and tests a single AM Release configuration (`PLATFORM=rpiv2`) on a Raspberry Pi 3B runner, then runs unit tests and system tests.
 
 **Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
 
