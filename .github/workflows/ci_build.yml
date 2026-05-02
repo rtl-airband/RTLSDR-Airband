@@ -42,10 +42,8 @@ jobs:
         CMAKE_PLATFORM: ${{ matrix.platform || 'native' }}
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
-
-    - name: Install Python
-      run: uv python install 3.11
+      if: matrix.os != 'pi_3b' # already installed on pi_3b, action not supported on arm
+      uses: astral-sh/setup-uv@v8
 
     - name: Run system tests
       run: |
