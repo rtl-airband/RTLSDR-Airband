@@ -43,7 +43,7 @@ jobs:
 
     - name: Install uv
       if: matrix.os != 'pi_3b' # already installed on pi_3b, action not supported on arm
-      uses: astral-sh/setup-uv@v8
+      uses: astral-sh/setup-uv@v8.1.0
 
     - name: Run system tests
       run: |
