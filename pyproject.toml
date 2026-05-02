@@ -13,9 +13,12 @@ dependencies = [
 
 [tool.uv]
 environments = [
+    "platform_machine == 'x86_64' and sys_platform == 'linux'",
     "platform_machine == 'aarch64' and sys_platform == 'linux'",
     "platform_machine == 'armv7l' and sys_platform == 'linux'",
     "platform_machine == 'armv6l' and sys_platform == 'linux'",
+    "platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "platform_machine == 'x86_64' and sys_platform == 'darwin'",
 ]
 
 [tool.uv.sources]
