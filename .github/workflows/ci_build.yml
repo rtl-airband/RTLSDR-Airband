@@ -13,9 +13,9 @@ jobs:
   ci_build:
     strategy:
       matrix:
-        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm, rpi3b ]
+        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm, pi_3b ]
         include:
-          - os: rpi3b
+          - os: pi_3b
             platform: rpiv2
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35 # runtime across all OSs, runs can get queued
