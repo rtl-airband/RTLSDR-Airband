@@ -1,0 +1,41 @@
+name: Platform Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '39 13 * * *' # run daily
+
+jobs:
+  platform_build:
+    runs-on: pi_3b
+    timeout-minutes: 35
+    steps:
+    - name: Runner Info
+      run: printenv | sort
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: '0' # need full history to get version from git tag
+
+    - name: Install packaged dependencies
+      run: .github/install_dependencies
+
+    - name: Build
+      run: |
+        cmake -B builds/Release -DCMAKE_BUILD_TYPE=Release -DPLATFORM=rpiv2 -DBUILD_UNITTESTS=TRUE -S .
+        VERBOSE=1 cmake --build builds/Release -j
+
+    - name: Unit Tests
+      run: builds/Release/src/unittests
+
+    - name: Run system tests
+      run: |
+        ~/.local/bin/uv run --no-group dev pytest system_tests/tests/ \
+          --binary builds/Release/src/rtl_airband \
+          --mode thorough \
+          -v

@@ -13,10 +13,7 @@ jobs:
   ci_build:
     strategy:
       matrix:
-        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm, pi_3b ]
-        include:
-          - os: pi_3b
-            platform: rpiv2
+        os: [ ubuntu-22.04, macos-14, ubuntu-22.04-arm ]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35 # runtime across all OSs, runs can get queued
     steps:
@@ -31,18 +28,10 @@ jobs:
     - name: Install packaged dependencies
       run: .github/install_dependencies
 
-    - name: Build
-      run: VERBOSE=1 scripts/build_all_combos
-      env:
-        CMAKE_PLATFORM: ${{ matrix.platform || 'native' }}
-
-    - name: Unit Tests
-      run: scripts/run_unit_tests
-      env:
-        CMAKE_PLATFORM: ${{ matrix.platform || 'native' }}
+    - name: Build and Unit Tests
+      run: VERBOSE=1 scripts/run_unit_tests
 
     - name: Install uv
-      if: matrix.os != 'pi_3b' # already installed on pi_3b, action not supported on arm
       uses: astral-sh/setup-uv@v8.1.0
 
     - name: Run system tests
