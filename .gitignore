@@ -2,14 +2,20 @@
 .cache
 .venv/
 __pycache__
-compile_commands.json
+
+# debug run log files
 rtl_airband*.log
+
+# vscode build directory (single config)
 build/
+
+# unit test and system test build directories (multiple configs)
 builds/
 
+# system test cache / output and user-specific test cases
 system_tests/.generated_input
 system_tests/user_provided/
 system_tests/test_output/
 
-# Claude Code - personal overrides (team settings go in .claude/settings.json)
+# Claude Code - personal overrides
 .claude/settings.local.json
