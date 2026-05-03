@@ -14,7 +14,7 @@ jobs:
       run: printenv | sort
 
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Clang Format
       run: sudo apt-get install clang-format-14

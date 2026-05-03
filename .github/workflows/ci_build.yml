@@ -21,7 +21,7 @@ jobs:
       run: printenv | sort
 
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: '0' # need full history to get version from git tag
 
