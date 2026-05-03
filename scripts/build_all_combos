@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." || exit; pwd)"
+
+BUILD_AM="${REPO_ROOT}/builds/Debug"
+BUILD_NFM="${REPO_ROOT}/builds/Debug_nfm"
+BUILD_AM_RELEASE="${REPO_ROOT}/builds/Release"
+BUILD_NFM_RELEASE="${REPO_ROOT}/builds/Release_nfm"
+BUILD_AM_GENERIC="${REPO_ROOT}/builds/Release_generic"
+BUILD_NFM_GENERIC="${REPO_ROOT}/builds/Release_nfm_generic"
+
+echo "=== Configuring AM Debug native build ==="
+cmake -B "${BUILD_AM}" -DCMAKE_BUILD_TYPE=Debug -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring NFM Debug native build ==="
+cmake -B "${BUILD_NFM}" -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring AM Release native build ==="
+cmake -B "${BUILD_AM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring NFM Release native build ==="
+cmake -B "${BUILD_NFM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring AM Release generic build ==="
+cmake -B "${BUILD_AM_GENERIC}" -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Configuring NFM Release generic build ==="
+cmake -B "${BUILD_NFM_GENERIC}" -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+
+echo "=== Building AM Debug native ==="
+cmake --build "${BUILD_AM}" -j
+
+echo "=== Building NFM Debug native ==="
+cmake --build "${BUILD_NFM}" -j
+
+echo "=== Building AM Release native ==="
+cmake --build "${BUILD_AM_RELEASE}" -j
+
+echo "=== Building NFM Release native ==="
+cmake --build "${BUILD_NFM_RELEASE}" -j
+
+echo "=== Building AM Release generic ==="
+cmake --build "${BUILD_AM_GENERIC}" -j
+
+echo "=== Building NFM Release generic ==="
+cmake --build "${BUILD_NFM_GENERIC}" -j
+
+echo "=== Build complete ==="

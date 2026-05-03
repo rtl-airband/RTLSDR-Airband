@@ -12,6 +12,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
         sudo \
         gdb \
         clang-format-14 \
+        curl \
         python3-pip \
         pre-commit \
         vim
@@ -19,5 +20,9 @@ RUN DEBIAN_FRONTEND=noninteractive \
 WORKDIR /app
 COPY .github/install_dependencies /app/
 RUN /app/install_dependencies
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -s /root/.local/bin/uv /usr/local/bin/uv && \
+    ln -s /root/.local/bin/uvx /usr/local/bin/uvx
 
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

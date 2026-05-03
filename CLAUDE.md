@@ -40,20 +40,20 @@ Dependencies: libconfig++, libmp3lame, libshout, libfftw3f, librtlsdr, libsoapys
 
 ```bash
 # Standard debug build with unit tests
-cmake -B build_Debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE
-cmake --build build_Debug -j4
+cmake -B builds/Debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE
+cmake --build builds/Debug -j4
 
 # Release build with NFM and SoapySDR
-cmake -B build_Release -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DSOAPYSDR=ON
-cmake --build build_Release -j4
+cmake -B builds/Release -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DSOAPYSDR=ON
+cmake --build builds/Release -j4
 
 # Run unit tests
-./build_Debug/src/unittests
-./build_Release/src/unittests
+./builds/Debug/src/unittests
+./builds/Release/src/unittests
 
 # Run the binary
-./build_Debug/src/rtl_airband -c /path/to/config.conf
-./build_Release/src/rtl_airband -c /path/to/config.conf
+./builds/Debug/src/rtl_airband -c /path/to/config.conf
+./builds/Release/src/rtl_airband -c /path/to/config.conf
 ```
 
 Key CMake flags (all in `src/CMakeLists.txt`):
@@ -88,24 +88,54 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 - YAML/JSON validity, trailing whitespace, EOF newlines, shebang permissions, large files, merge conflict markers, private keys
 - clang-format on all `src/*.cpp` and `src/*.h` files
 - shellcheck on all bash scripts (excluding `init.d/`)
-- Build and unit tests (AM and NFM) when `src/*.cpp`, `src/*.h`, or `CMakeLists.txt` are modified (`scripts/run_tests`)
+- black, isort, and pylint on all `system_tests/**/*.py` files
+- Build (AM and NFM) and C++ unit tests when `src/*.cpp`, `src/*.h`, or `CMakeLists.txt` are modified (`scripts/run_unit_tests`)
+- Python system tests when `src/*.cpp`, `src/*.h`, `CMakeLists.txt`, or `system_tests/` are modified (`scripts/run_system_tests`); only runs if the build/unit-test step passes
 
 ## CI and Pull Request Checks
 
-Two workflows run on every PR (`.github/workflows/`):
+Three workflows run on every PR (`.github/workflows/`):
 
 **`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
 
 **`ci_build.yml`** — builds and tests four configurations on Ubuntu (x86 and ARM) and macOS:
 ```bash
-cmake -B build_Debug          -DCMAKE_BUILD_TYPE=Debug   -DBUILD_UNITTESTS=TRUE
-cmake -B build_Debug_NFM      -DCMAKE_BUILD_TYPE=Debug   -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
-cmake -B build_Release        -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
-cmake -B build_Release_NFM    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+cmake -B builds/Debug          -DCMAKE_BUILD_TYPE=Debug   -DBUILD_UNITTESTS=TRUE
+cmake -B builds/Debug_nfm      -DCMAKE_BUILD_TYPE=Debug   -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+cmake -B builds/Release        -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
+cmake -B builds/Release_nfm    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
 ```
 Then runs `unittests` for all four, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
 
+**`platform_build.yml`** — builds and tests an AM Release configuration (`PLATFORM=native`) on a Pi 4B runner and an `ubuntu-22.04-arm` runner, then runs unit tests and system tests. (Pi 3B runner is currently disabled.)
+
 **Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
+
+## System Tests
+
+End-to-end tests live in `system_tests/`. They run the actual binary against generated IQ files and validate the audio output (MP3 duration, rawfile size). Managed with [uv](https://docs.astral.sh/uv/).
+
+```bash
+# Run system tests (requires Release binaries — run scripts/run_unit_tests first)
+scripts/run_system_tests
+
+# Run manually from the system_tests directory
+cd system_tests
+uv sync
+uv run pytest tests/ \
+    --binary ../builds/Release/src/rtl_airband \
+    --nfm-binary ../builds/Release_nfm/src/rtl_airband \
+    -v
+```
+
+Python tooling (formatter, import sorter, linter) is configured in `system_tests/pyproject.toml` under `[tool.black]`, `[tool.isort]`, and `[tool.pylint]`. Run them manually:
+
+```bash
+cd system_tests
+uv run black .
+uv run isort .
+uv run pylint conftest.py helpers/ tests/
+```
 
 ## Architecture
 

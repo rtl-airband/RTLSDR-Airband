@@ -5,8 +5,12 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.black-formatter",
+				"ms-python.pylint",
+				"ms-python.isort",
 				"ms-vscode.cpptools",
-				"ms-vscode.cmake-tools",
 				"ms-vscode.cpptools-extension-pack",
 				"streetsidesoftware.code-spell-checker",
 				"ms-azuretools.vscode-docker",
@@ -18,7 +22,8 @@
 	"containerEnv": {
 		"SHELL": "/bin/bash"
 	},
-	"postStartCommand": "cmake -B /app/build -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=true ; pre-commit install",
+	"postCreateCommand": "pre-commit install",
+	"postStartCommand": "cd ${containerWorkspaceFolder}/system_tests && uv sync",
 	"runArgs": [
 		"--cap-add=SYS_PTRACE",
 		"--security-opt",

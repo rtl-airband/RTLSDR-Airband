@@ -6,6 +6,15 @@
     "editor.formatOnSave": true,
     "editor.formatOnType": true,
     "editor.defaultFormatter": null,
+    "[python]": {
+        "editor.quickSuggestions": {
+            "other": "on",
+            "comments": "off",
+            "strings": "on"
+        },
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.suggest.insertMode": "insert"
+    },
     "[cpp]": {
         "editor.quickSuggestions": {
             "other": "on",
@@ -29,5 +38,13 @@
     "cmake.configureArgs": [
         "-DNFM=TRUE",
         "-DBUILD_UNITTESTS=TRUE"
-    ]
+    ],
+    "python.analysis.typeCheckingMode": "standard",
+    "pylint.severity": {
+        "refactor": "Information"
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "black-formatter.path": ["${workspaceFolder}/.venv/bin/black"],
+    "isort.path": ["${workspaceFolder}/.venv/bin/isort"],
+    "pylint.path": ["${workspaceFolder}/.venv/bin/pylint"]
 }

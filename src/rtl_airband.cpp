@@ -405,7 +405,6 @@ void* demodulate(void* params) {
         if (dev->input->state != INPUT_RUNNING) {
             if (dev->input->state == INPUT_FAILED) {
                 dev->input->state = INPUT_DISABLED;
-                disable_device_outputs(dev);
                 devices_running--;
             }
             device_num = next_device(demod_params, device_num);
@@ -1122,11 +1121,6 @@ int main(int argc, char* argv[]) {
     }
     log(LOG_INFO, "Input threads closed\n");
 
-    for (int i = 0; i < device_count; i++) {
-        device_t* dev = devices + i;
-        disable_device_outputs(dev);
-    }
-
     if (mixer_count > 0) {
         log(LOG_INFO, "Closing mixer thread\n");
         pthread_join(mixer, NULL);
@@ -1136,6 +1130,11 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < output_thread_count; i++) {
         output_params[i].mp3_signal->send();
         pthread_join(output_threads[i], NULL);
+    }
+
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        disable_device_outputs(dev);
     }
 
     for (int i = 0; i < device_count; i++) {

@@ -1,0 +1,85 @@
+[project]
+name = "rtlsdr-airband-system-tests"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+    "pytest-xdist>=3.0",
+    "numpy>=2.0",
+    "scipy>=1.10",
+    "mutagen>=1.45",
+]
+
+[tool.uv]
+environments = [
+    "platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "platform_machine == 'armv7l' and sys_platform == 'linux'",
+    "platform_machine == 'armv6l' and sys_platform == 'linux'",
+    "platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "platform_machine == 'x86_64' and sys_platform == 'darwin'",
+]
+
+[tool.uv.sources]
+numpy = [
+    { index = "piwheels", marker = "platform_machine == 'armv7l' or platform_machine == 'armv6l'" },
+]
+scipy = [
+    { index = "piwheels", marker = "platform_machine == 'armv7l' or platform_machine == 'armv6l'" },
+]
+
+[[tool.uv.index]]
+name = "piwheels"
+url = "https://www.piwheels.org/simple"
+explicit = true
+
+[tool.pytest.ini_options]
+timeout = 120
+testpaths = ["system_tests/tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["system_tests/helpers", "system_tests/tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "black>=24.0",
+    "isort>=8.0.1",
+    "pylint>=4.0.5",
+]
+
+[tool.black]
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+
+[tool.pylint.messages_control]
+disable = [
+    "missing-function-docstring",   # pytest fixtures and test functions don't require docstrings
+    "missing-class-docstring",      # dataclasses used as plain data holders don't require docstrings
+    "protected-access",             # _rtlsdr_am_binaries is an intentional pytest config stash
+    "redefined-outer-name",         # standard pytest fixture injection pattern
+    "unused-argument",              # fixtures use extra args purely for ordering/side effects
+    "subprocess-run-check",         # returncode is checked explicitly after run()
+    "invalid-name",                 # I, Q, I_u8, Q_u8 are conventional SDR/signal-processing names
+    "duplicate-code",               # test boilerplate is intentionally similar across test files
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "line-too-long",                # black enforces line length; no need to double-check
+    "fixme",
+]
+
+[tool.pylint.design]
+max-statements = 75
+
+[tool.pylint.typecheck]
+# mutagen exposes attributes dynamically; suppress false-positive no-member errors
+generated-members = ["mutagen.*"]

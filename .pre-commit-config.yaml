@@ -27,9 +27,37 @@ repos:
 
 - repo: local
   hooks:
+  - id: black
+    name: black (Python formatter)
+    language: system
+    entry: uv run black
+    types: [python]
+    files: ^system_tests/
+
+  - id: isort
+    name: isort (Python import sorter)
+    language: system
+    entry: uv run isort
+    types: [python]
+    files: ^system_tests/
+
+  - id: pylint
+    name: pylint (Python linter)
+    language: system
+    entry: uv run pylint
+    types: [python]
+    files: ^system_tests/
+
   - id: run-tests
-    name: Build and run unit tests (AM and NFM)
-    entry: scripts/run_tests
+    name: Run unit tests
+    entry: scripts/run_unit_tests
     language: script
     pass_filenames: false
-    files: \.(cpp|h)$|CMakeLists\.txt$|^scripts/run_tests$
+    files: \.(cpp|h)$|CMakeLists\.txt$|^scripts/
+
+  - id: run-system-tests
+    name: Run system tests
+    entry: scripts/run_system_tests
+    language: script
+    pass_filenames: false
+    files: \.(cpp|h)$|CMakeLists\.txt$|^scripts/|^system_tests/

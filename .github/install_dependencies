@@ -17,7 +17,8 @@ case "${unameOut}" in
             libfftw3-dev \
             librtlsdr-dev \
             libsoapysdr-dev \
-            libpulse-dev
+            libpulse-dev \
+            libopenblas0-pthread
 
         (
             git clone https://github.com/f4exb/libmirisdr-4

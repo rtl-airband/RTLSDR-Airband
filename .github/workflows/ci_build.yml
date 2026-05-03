@@ -28,29 +28,23 @@ jobs:
     - name: Install packaged dependencies
       run: .github/install_dependencies
 
-    - name: Configure
-      run: |
-        cmake -B ${{github.workspace}}/build_Debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Debug_NFM -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Release -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
-        cmake -B ${{github.workspace}}/build_Release_NFM -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
+    - name: Build and Unit Tests
+      run: VERBOSE=1 scripts/run_unit_tests
 
-    - name: Build
-      run: |
-        VERBOSE=1 cmake --build ${{github.workspace}}/build_Debug -j4
-        VERBOSE=1 cmake --build ${{github.workspace}}/build_Debug_NFM -j4
-        VERBOSE=1 cmake --build ${{github.workspace}}/build_Release -j4
-        VERBOSE=1 cmake --build ${{github.workspace}}/build_Release_NFM -j4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v8.1.0
 
-    - name: Unit Tests
+    - name: Run system tests
       run: |
-        ${{github.workspace}}/build_Debug/src/unittests
-        ${{github.workspace}}/build_Debug_NFM/src/unittests
-        ${{github.workspace}}/build_Release/src/unittests
-        ${{github.workspace}}/build_Release_NFM/src/unittests
+        uv run --no-group dev pytest system_tests/tests/ \
+          --binary builds/Release/src/rtl_airband \
+          --nfm-binary builds/Release_nfm/src/rtl_airband \
+          --mode thorough \
+          --clean \
+          -v
 
-    - name: Install
-      run: sudo cmake --install ${{github.workspace}}/build_Release_NFM
+    - name: Install rtl_airband
+      run: sudo cmake --install ${{github.workspace}}/builds/Release
 
     - name: Test run
       run: /usr/local/bin/rtl_airband -v
