@@ -47,7 +47,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "black>=24.0",
+    "black>=26.3.1",
     "isort>=8.0.1",
     "pylint>=4.0.5",
 ]
