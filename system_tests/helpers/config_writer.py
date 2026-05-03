@@ -105,8 +105,6 @@ def write_config(
         if ch.get("modulation") is not None:
             lines.append(f'      modulation = "{ch["modulation"]}";')
 
-        lines.append(f"      squelch = {ch['squelch']:.1f};")
-
         if ch.get("ctcss") is not None:
             lines.append(f"      ctcss = {ch['ctcss']:.1f};")
 
@@ -115,6 +113,9 @@ def write_config(
 
         if ch.get("notch") is not None:
             lines.append(f"      notch = {ch['notch']:.2f};")
+
+        if ch.get("squelch") is not None:
+            lines.append(f"      squelch_snr_threshold = {ch['squelch']:.1f};")
 
         # Build output entries: file outputs use directory+template+append,
         # mixer outputs use name+balance.

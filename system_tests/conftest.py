@@ -49,6 +49,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Invoke rtl_airband via sudo (required when BCM VideoCore GPU FFT is enabled)",
     )
+    parser.addoption(
+        "--clean",
+        action="store_true",
+        default=False,
+        help="Delete the .generated_input cache before running tests",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +84,18 @@ def pytest_configure(config: pytest.Config) -> None:
     global _use_sudo  # pylint: disable=global-statement
     try:
         _use_sudo = bool(config.getoption("--sudo"))
+    except ValueError:
+        pass
+
+    try:
+        if config.getoption("--clean") and CACHE_DIR.exists():
+            shutil.rmtree(CACHE_DIR)
+    except ValueError:
+        pass
+
+    try:
+        if TEST_OUTPUT_DIR.exists():
+            shutil.rmtree(TEST_OUTPUT_DIR)
     except ValueError:
         pass
 
@@ -161,16 +179,10 @@ def _test_output_dir() -> Path:
 
 @pytest.fixture
 def test_output_dir(request: pytest.FixtureRequest, _test_output_dir: Path) -> Path:
-    """Per-test subdirectory under test_output/ for all generated files (config + audio).
-
-    Tests write both the rtl_airband config and all audio output directly here,
-    so everything for a test run is in one named location.
-    """
+    """Per-test subdirectory under test_output/ for all generated files (config + audio)."""
     test_name = re.sub(r"[^\w.-]", "_", request.node.name)
     d = _test_output_dir / test_name
-    if d.exists():
-        shutil.rmtree(d)
-    d.mkdir(parents=True, exist_ok=True)
+    d.mkdir(parents=True)
     return d
 
 
@@ -272,7 +284,7 @@ class UserMixerCase:
 class UserChannelCase:
     freq_hz: int
     modulation: str | None
-    squelch: float
+    squelch: float | None
     ctcss: float | None
     bandwidth: int | None
     notch: float | None
@@ -314,7 +326,8 @@ def _parse_channel(raw: dict[str, Any], index: int, mode: str) -> UserChannelCas
             f"Channel {index}: 'modulation' must be 'am' or 'nfm', got {modulation_raw!r}"
         )
     modulation = modulation_raw
-    squelch = float(raw.get("squelch", 0.0))
+    squelch_raw = raw.get("squelch", None)
+    squelch = float(squelch_raw) if squelch_raw is not None else None
     ctcss_raw = raw.get("ctcss", None)
     ctcss = float(ctcss_raw) if ctcss_raw is not None else None
     bandwidth_raw = raw.get("bandwidth", None)

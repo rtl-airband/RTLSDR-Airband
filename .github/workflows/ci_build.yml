@@ -40,6 +40,7 @@ jobs:
           --binary builds/Release/src/rtl_airband \
           --nfm-binary builds/Release_nfm/src/rtl_airband \
           --mode thorough \
+          --clean \
           -v
 
     - name: Install rtl_airband

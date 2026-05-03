@@ -76,7 +76,6 @@ def test_scan(
             {
                 "freq_hz": FREQ_A_HZ,  # not used in scan mode
                 "scan_freqs_hz": [FREQ_A_HZ, FREQ_B_HZ],
-                "squelch": 0,
                 "ctcss": None,
                 "output_filename_template": filename_template,
             }

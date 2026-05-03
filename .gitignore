@@ -1,10 +1,15 @@
 .DS_Store
 .cache
+.venv/
 __pycache__
 compile_commands.json
 rtl_airband*.log
 build/
 builds/
+
+system_tests/.generated_input
+system_tests/user_provided/
+system_tests/test_output/
 
 # Claude Code - personal overrides (team settings go in .claude/settings.json)
 .claude/settings.local.json

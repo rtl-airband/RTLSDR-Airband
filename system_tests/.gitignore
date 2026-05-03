@@ -1,6 +1,0 @@
-__pycache__/
-.venv/
-.generated_input/
-audio_output/
-test_output/
-user_provided/
