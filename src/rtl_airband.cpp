@@ -56,6 +56,8 @@
 #include <ctime>
 #include <iostream>
 #include <libconfig.h++>
+#include <memory>
+#include <vector>
 #include "input-common.h"
 #include "logging.h"
 #include "rtl_airband.h"
@@ -349,9 +351,9 @@ void* demodulate(void* params) {
     // blackman 7
     // the whole matrix is computed
 #ifdef WITH_BCM_VC
-    float ALIGNED32 window[fft_size * 2];
+    std::vector<float> window(fft_size * 2);
 #else
-    float ALIGNED32 window[fft_size];
+    std::unique_ptr<float[], decltype(&fftwf_free)> window(fftwf_alloc_real(fft_size), fftwf_free);
 #endif /* WITH_BCM_VC */
 
     const double a0 = 0.27105140069342f;
@@ -463,7 +465,7 @@ void* demodulate(void* params) {
 #ifdef WITH_BCM_VC
             sample_fft_arg sfa = {fft_size / 4, fft->in};
             for (size_t i = 0; i < FFT_BATCH; i++) {
-                samplefft(&sfa, dev->input->buffer + dev->input->bufs + i * bps, window, levels_ptr);
+                samplefft(&sfa, dev->input->buffer + dev->input->bufs + i * bps, window.data(), levels_ptr);
                 sfa.dest += fft->step;
             }
 #else
