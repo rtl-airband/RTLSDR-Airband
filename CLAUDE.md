@@ -107,7 +107,7 @@ cmake -B builds/Release_nfm    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNI
 ```
 Then runs `unittests` for all four, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
 
-**`platform_build.yml`** — builds and tests a single AM Release configuration (`PLATFORM=rpiv2`) on a Raspberry Pi 3B runner, then runs unit tests and system tests.
+**`platform_build.yml`** — builds and tests an AM Release configuration (`PLATFORM=native`) on a Pi 4B runner and an `ubuntu-22.04-arm` runner, then runs unit tests and system tests. (Pi 3B runner is currently disabled.)
 
 **Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
 
