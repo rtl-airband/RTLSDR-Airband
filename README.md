@@ -1,9 +1,51 @@
 # RTLSDR-Airband
 
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main)
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main)
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)
-![main](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main)
+![version tag](https://img.shields.io/github/v/tag/rtl-airband/RTLSDR-Airband?label=)
+
+### CI Workflow Status
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml">Run CI</a></th>
+      <th><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml">Platform Build</a></th>
+      <th><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml">Code Formatting</a></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>x86_64 ubuntu-22.04</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+      <td align="center" rowspan="4"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main" alt="Code Formatting"></a></td>
+    </tr>
+    <tr>
+      <td>ARM64 ubuntu-22.04</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main" alt="Platform Build"></a></td>
+    </tr>
+    <tr>
+      <td>ARM64 macos-14</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>ARM64 Debian Trixie (Pi 4B)</td>
+      <td></td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main" alt="Platform Build"></a></td>
+    </tr>
+  </tbody>
+</table>
+
+### [Published Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml)
+
+| linux/amd64 | linux/386 | linux/arm64 | linux/arm/v6 | linux/arm/v7 |
+|:---:|:---:|:---:|:---:|:---:|
+| [![Build Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml) | [![Build Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml) | [![Build Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml) | [![Build Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml) | [![Build Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml/badge.svg?branch=main)](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml) |
+
+
+### Major / Minor Version Changes:
 
 Changes as of v5.1.0:
  - License is now GPLv2 [#503](https://github.com/rtl-airband/RTLSDR-Airband/discussions/503)
@@ -41,6 +83,7 @@ of RTLSDR-Airband. Special thanks go to:
 * SDR Guru
 * Marcus Ströbel
 * strix-technica
+* Tomasz Lemiech
 * charlie-foxtrot
 
 ## License
