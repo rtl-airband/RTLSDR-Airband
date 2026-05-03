@@ -1,5 +1,7 @@
 # RTLSDR-Airband
 
+![version tag](https://img.shields.io/github/v/tag/rtl-airband/RTLSDR-Airband?label=)
+
 ### CI Workflow Status
 
 <table>
@@ -36,7 +38,7 @@
   </tbody>
 </table>
 
-### [Build Containers (latest version)](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml)
+### [Published Containers](https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/build_docker_containers.yml)
 
 | linux/amd64 | linux/386 | linux/arm64 | linux/arm/v6 | linux/arm/v7 |
 |:---:|:---:|:---:|:---:|:---:|
