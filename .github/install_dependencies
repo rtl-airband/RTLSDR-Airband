@@ -18,9 +18,7 @@ case "${unameOut}" in
             librtlsdr-dev \
             libsoapysdr-dev \
             libpulse-dev \
-            libopenblas0-pthread \
-            google-perftools \
-            libgoogle-perftools-dev
+            libopenblas0-pthread
 
         (
             git clone https://github.com/f4exb/libmirisdr-4
