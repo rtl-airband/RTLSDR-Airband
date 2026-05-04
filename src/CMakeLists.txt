@@ -16,9 +16,6 @@ if(CXX_HAS_PTHREAD)
 endif()
 
 CHECK_CXX_COMPILER_FLAG(-ffast-math CXX_HAS_FFAST_MATH)
-if(CXX_HAS_FFAST_MATH)
-    add_compile_options(-ffast-math)
-endif()
 
 # asprintf on MacOS
 if(APPLE)
@@ -304,6 +301,10 @@ target_include_directories (rtl_airband_base PUBLIC
 	${CMAKE_CURRENT_BINARY_DIR} # needed for config.h
 	${rtl_airband_include_dirs}
 )
+
+if(CXX_HAS_FFAST_MATH)
+    target_compile_options(rtl_airband_base PRIVATE -ffast-math)
+endif()
 
 # can't do this per target with cmake <3.13
 link_directories(${link_dirs})

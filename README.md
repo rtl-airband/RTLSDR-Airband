@@ -18,7 +18,12 @@
       <td>x86_64 ubuntu-22.04</td>
       <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
       <td></td>
-      <td align="center" rowspan="4"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main" alt="Code Formatting"></a></td>
+      <td align="center" rowspan="10"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/code_formatting.yml/badge.svg?branch=main" alt="Code Formatting"></a></td>
+    </tr>
+    <tr>
+      <td>x86_64 ubuntu-24.04</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
     </tr>
     <tr>
       <td>ARM64 ubuntu-22.04</td>
@@ -26,7 +31,32 @@
       <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/platform_build.yml/badge.svg?branch=main" alt="Platform Build"></a></td>
     </tr>
     <tr>
+      <td>ARM64 ubuntu-24.04</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+    </tr>
+    <tr>
       <td>ARM64 macos-14</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>ARM64 macos-15</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>ARM64 macos-26</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>x86_64 macos-15 (Intel)</td>
+      <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>x86_64 macos-26 (Intel)</td>
       <td align="center"><a href="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml"><img src="https://github.com/rtl-airband/RTLSDR-Airband/actions/workflows/ci_build.yml/badge.svg?branch=main" alt="Run CI"></a></td>
       <td></td>
     </tr>

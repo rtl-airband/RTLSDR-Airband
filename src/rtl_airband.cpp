@@ -29,6 +29,9 @@
 #ifdef WITH_BCM_VC
 #include "hello_fft/gpu_fft.h"
 #include "hello_fft/mailbox.h"
+#else
+#include <memory>
+#include <vector>
 #endif /* WITH_BCM_VC */
 
 #include <fcntl.h>
@@ -349,9 +352,10 @@ void* demodulate(void* params) {
     // blackman 7
     // the whole matrix is computed
 #ifdef WITH_BCM_VC
+    // TODO: change this to std::vector<float> ?
     float ALIGNED32 window[fft_size * 2];
 #else
-    float ALIGNED32 window[fft_size];
+    std::unique_ptr<float[], decltype(&fftwf_free)> window(fftwf_alloc_real(fft_size), fftwf_free);
 #endif /* WITH_BCM_VC */
 
     const double a0 = 0.27105140069342f;

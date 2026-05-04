@@ -9,41 +9,30 @@ BUILD_AM_RELEASE="${REPO_ROOT}/builds/Release"
 BUILD_NFM_RELEASE="${REPO_ROOT}/builds/Release_nfm"
 BUILD_AM_GENERIC="${REPO_ROOT}/builds/Release_generic"
 BUILD_NFM_GENERIC="${REPO_ROOT}/builds/Release_nfm_generic"
+BUILD_PROFILING="${REPO_ROOT}/builds/Profiling_nfm_generic"
 
-echo "=== Configuring AM Debug native build ==="
-cmake -B "${BUILD_AM}" -DCMAKE_BUILD_TYPE=Debug -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+build() {
+    local name="$1"
+    local dir="$2"
+    shift 2
+    echo "*** Configuring ${name} ***"
+    cmake -B "${dir}" "$@" -S "${REPO_ROOT}"
+    echo "*** Building ${name} ***"
+    cmake --build "${dir}" -j
+    echo ""
+}
 
-echo "=== Configuring NFM Debug native build ==="
-cmake -B "${BUILD_NFM}" -DCMAKE_BUILD_TYPE=Debug -DNFM=TRUE -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+# full combination of native builds of Debug / Release, AM-only / AM+NFM
 
-echo "=== Configuring AM Release native build ==="
-cmake -B "${BUILD_AM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+build "AM Debug native"    "${BUILD_AM}"          -DCMAKE_BUILD_TYPE=Debug   -DPLATFORM=native   -DBUILD_UNITTESTS=TRUE
+build "NFM Debug native"   "${BUILD_NFM}"         -DCMAKE_BUILD_TYPE=Debug   -DNFM=TRUE -DPLATFORM=native   -DBUILD_UNITTESTS=TRUE
+build "AM Release native"  "${BUILD_AM_RELEASE}"  -DCMAKE_BUILD_TYPE=Release -DPLATFORM=native   -DBUILD_UNITTESTS=TRUE
+build "NFM Release native" "${BUILD_NFM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=native   -DBUILD_UNITTESTS=TRUE
 
-echo "=== Configuring NFM Release native build ==="
-cmake -B "${BUILD_NFM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=native -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+# Release-only generic builds of AM-only, AM+NFM, then AM+NFM+profiling
 
-echo "=== Configuring AM Release generic build ==="
-cmake -B "${BUILD_AM_GENERIC}" -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
+build "AM Release generic"  "${BUILD_AM_GENERIC}"   -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
+build "NFM Release generic" "${BUILD_NFM_GENERIC}"  -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
+build "Profiling generic"   "${BUILD_PROFILING}"    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DPROFILING=TRUE -DBUILD_UNITTESTS=TRUE
 
-echo "=== Configuring NFM Release generic build ==="
-cmake -B "${BUILD_NFM_GENERIC}" -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE -S "${REPO_ROOT}"
-
-echo "=== Building AM Debug native ==="
-cmake --build "${BUILD_AM}" -j
-
-echo "=== Building NFM Debug native ==="
-cmake --build "${BUILD_NFM}" -j
-
-echo "=== Building AM Release native ==="
-cmake --build "${BUILD_AM_RELEASE}" -j
-
-echo "=== Building NFM Release native ==="
-cmake --build "${BUILD_NFM_RELEASE}" -j
-
-echo "=== Building AM Release generic ==="
-cmake --build "${BUILD_AM_GENERIC}" -j
-
-echo "=== Building NFM Release generic ==="
-cmake --build "${BUILD_NFM_GENERIC}" -j
-
-echo "=== Build complete ==="
+echo "*** Build complete ***"

@@ -15,7 +15,9 @@ RUN DEBIAN_FRONTEND=noninteractive \
         curl \
         python3-pip \
         pre-commit \
-        vim
+        vim \
+        google-perftools \
+        libgoogle-perftools-dev
 
 WORKDIR /app
 COPY .github/install_dependencies /app/

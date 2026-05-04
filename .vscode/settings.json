@@ -12,6 +12,9 @@
             "comments": "off",
             "strings": "on"
         },
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
         "editor.defaultFormatter": "ms-python.black-formatter",
         "editor.suggest.insertMode": "insert"
     },
@@ -44,7 +47,13 @@
         "refactor": "Information"
     },
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-    "black-formatter.path": ["${workspaceFolder}/.venv/bin/black"],
-    "isort.path": ["${workspaceFolder}/.venv/bin/isort"],
-    "pylint.path": ["${workspaceFolder}/.venv/bin/pylint"]
+    "black-formatter.path": [
+        "${workspaceFolder}/.venv/bin/black"
+    ],
+    "isort.path": [
+        "${workspaceFolder}/.venv/bin/isort"
+    ],
+    "pylint.path": [
+        "${workspaceFolder}/.venv/bin/pylint"
+    ]
 }
