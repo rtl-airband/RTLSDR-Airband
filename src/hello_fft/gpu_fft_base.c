@@ -26,11 +26,11 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "bcm_host.h"
 #include "gpu_fft.h"
 #include "mailbox.h"
 
 #define BUS_TO_PHYS(x) ((x) & ~0xC0000000)
+#define PERI_SIZE 0x01000000
 
 // V3D spec: http://www.broadcom.com/docs/support/videocore/VideoCoreIV-AG100-R.pdf
 #define V3D_L2CACTL (0xC00020 >> 2)
@@ -87,20 +87,24 @@ unsigned gpu_fft_base_exec(struct GPU_FFT_BASE* base, unsigned num_qpus) {
 int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
     struct GPU_FFT_BASE* base;
     volatile unsigned* peri;
-    unsigned handle;
+    unsigned handle, mem_flg, peri_addr;
 
     if (qpu_enable(mb, 1))
         return -1;
 
-    // Shared memory : cached=0xC; direct=0x4
-    unsigned mem_flg = bcm_host_get_sdram_address() == 0x40000000 ? 0xC : 0x4;
+    // Derive memory flags and peripheral address from board revision
+    unsigned revision = get_board_revision(mb);
+    int sp = (revision & (1 << 23)) ? ((revision >> 12) & 0xF) : PROCESSOR_BCM2835;
+    mem_flg = (sp == PROCESSOR_BCM2836 || sp == PROCESSOR_BCM2837) ? 0xC : 0x4;
+    peri_addr = (sp == PROCESSOR_BCM2836 || sp == PROCESSOR_BCM2837) ? 0x3F000000 : (sp == PROCESSOR_BCM2711) ? 0xFE000000 : 0x20000000;
+
     handle = mem_alloc(mb, size, 4096, mem_flg);
     if (!handle) {
         qpu_enable(mb, 0);
         return -3;
     }
 
-    peri = (volatile unsigned*)mapmem(bcm_host_get_peripheral_address(), bcm_host_get_peripheral_size());
+    peri = (volatile unsigned*)mapmem(peri_addr, PERI_SIZE);
     if (!peri) {
         mem_free(mb, handle);
         qpu_enable(mb, 0);
@@ -122,7 +126,7 @@ int gpu_fft_alloc(int mb, unsigned size, struct GPU_FFT_PTR* ptr) {
 void gpu_fft_base_release(struct GPU_FFT_BASE* base) {
     int mb = base->mb;
     unsigned handle = base->handle, size = base->size;
-    unmapmem((void*)base->peri, bcm_host_get_peripheral_size());
+    unmapmem((void*)base->peri, PERI_SIZE);
     unmapmem((void*)base, size);
     mem_unlock(mb, handle);
     mem_free(mb, handle);
