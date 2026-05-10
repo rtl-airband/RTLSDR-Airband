@@ -14,9 +14,13 @@ jobs:
     strategy:
       matrix:
         include:
+          - runner: pi_3b
+            platform: rpiv2
+            sudo: true
+            uv_cmd: ~/.local/bin/uv
           - runner: pi_4b
             platform: native
-            sudo: true
+            sudo: false
             uv_cmd: ~/.local/bin/uv
           - runner: ubuntu-22.04-arm
             platform: native
