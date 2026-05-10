@@ -142,6 +142,8 @@ struct file_data {
     bool include_freq;
     timeval open_time;
     timeval last_write_time;
+    double minimum_transmission_sec;  // Add this
+    double transmission_delay_sec;    // And this
     FILE* f;
     enum output_type type;
 };
