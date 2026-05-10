@@ -27,10 +27,12 @@
 #include "rtl_airband.h"
 
 bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
-    // pre-allocate the stereo buffer
+    // `len` is provided in bytes.  For stereo streams allocate a buffer
+    // large enough to hold two channels worth of samples.
     if (mode == MM_STEREO) {
-        sdata->stereo_buffer_len = len * 2;
-        sdata->stereo_buffer = (float*)XCALLOC(sdata->stereo_buffer_len, sizeof(float));
+        sdata->stereo_buffer_len = (len / sizeof(float)) * 2;
+        sdata->stereo_buffer =
+            (float*)XCALLOC(sdata->stereo_buffer_len, sizeof(float));
     } else {
         sdata->stereo_buffer_len = 0;
         sdata->stereo_buffer = NULL;
@@ -90,14 +92,19 @@ void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len) {
     }
 }
 
-void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len) {
+void udp_stream_write(udp_stream_data* sdata,
+                      const float* data_left,
+                      const float* data_right,
+                      size_t len) {
     if (sdata->send_socket != -1) {
-        assert(len * 2 <= sdata->stereo_buffer_len);
-        for (size_t i = 0; i < len; ++i) {
+        size_t sample_count = len / sizeof(float);
+        assert(sample_count * 2 <= sdata->stereo_buffer_len);
+        for (size_t i = 0; i < sample_count; ++i) {
             sdata->stereo_buffer[2 * i] = data_left[i];
             sdata->stereo_buffer[2 * i + 1] = data_right[i];
         }
-        udp_stream_write(sdata, sdata->stereo_buffer, len * 2);
+        udp_stream_write(sdata, sdata->stereo_buffer,
+                         sample_count * 2 * sizeof(float));
     }
 }
 
