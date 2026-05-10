@@ -65,15 +65,20 @@
 #define DEFAULT_SAMPLE_RATE 2560000
 
 #ifdef NFM
+// 16k samples has less distortion and lends itself to better DSP downstream
+// there's an argument to be made that we should use 16k regardless of if NFM support is enabled
+// or not, but at the time of introducing this change making it conditional was the more conservative
+// change.
 #define WAVE_RATE 16000
+#define MP3_RATE 16000
 #else
 #define WAVE_RATE 8000
+#define MP3_RATE 8000
 #endif /* NFM */
 
 #define WAVE_BATCH WAVE_RATE / 8
 #define AGC_EXTRA 100
 #define WAVE_LEN 2 * WAVE_BATCH + AGC_EXTRA
-#define MP3_RATE 8000
 #define MAX_SHOUT_QUEUELEN 32768
 #define TAG_QUEUE_LEN 16
 
