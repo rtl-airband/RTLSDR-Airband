@@ -343,6 +343,9 @@ static void close_file(output_t* output) {
         const int lametag_size = lame_get_lametag_frame(output->lame, output->lamebuf, LAMEBUF_SIZE);
         fseek(fdata->f, 0, SEEK_SET);
         fwrite(output->lamebuf, 1, lametag_size, fdata->f);
+
+        // Reset the encoder bitstream so the frame count is correct for the next file
+        lame_init_bitstream(output->lame);
     }
 
     if (fdata->f) {

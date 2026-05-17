@@ -30,11 +30,15 @@ SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 CONFIG_CTCSS_HZ = 100.0  # what the config requests
 CORRECT_CTCSS_HZ = 100.0  # matches the config → should pass
 WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should block
-# The CTCSS detector needs ~2 s of tone before it opens the gate (fast detector:
-# 0.05 s windows × ~40 confirmations at 8 kHz audio rate; see ctcss.cpp).
-# Adjust this constant if the detector's startup latency changes.
-CTCSS_STARTUP_DELAY_S = 2.0
-EXPECTED_AUDIO_S = DURATION_S - CTCSS_STARTUP_DELAY_S  # 13.0 s
+
+# Time from carrier-on to the CTCSS gate first opening: squelch open_delay
+# (~25 ms at 8 kHz audio rate) + one fast CTCSS window (0.05 s) ≈ 75 ms.
+# 0.1 s gives a small margin for trailing-pad gate close timing.
+# squelch.cpp:118-134 — is_open() consults the fast detector until the slow one
+# has 0.4 s of samples; the fast detector checks every 0.05 s window with no
+# confirmation count requirement (ctcss.cpp:124-163).
+CTCSS_STARTUP_DELAY_S = 0.1
+EXPECTED_AUDIO_S = DURATION_S - CTCSS_STARTUP_DELAY_S  # 14.9 s
 TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 17 s
 TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 81 s
 

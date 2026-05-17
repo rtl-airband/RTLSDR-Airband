@@ -197,14 +197,19 @@ def am_binaries(request: pytest.FixtureRequest) -> list[BinaryUnderTest]:
 
 @pytest.fixture(scope="session")
 def rawfile_tolerance(request: pytest.FixtureRequest) -> float:
-    """Rawfile byte-count tolerance: 25% in fast mode, 15% in thorough mode."""
-    return 0.25 if request.config.getoption("--mode") == "fast" else 0.15
+    """Rawfile byte-count tolerance: 10% in both modes.
+
+    Fast mode (10x speedup) adds some demod-thread timing jitter — measured
+    worst-case is ~6% on multichannel non-nfm under load. 10% gives a ~1.5x
+    margin over that; tightening further risks intermittent CI failures.
+    """
+    return 0.10
 
 
 @pytest.fixture(scope="session")
 def mp3_tolerance(request: pytest.FixtureRequest) -> float:
-    """MP3 duration tolerance: 25% in fast mode, 15% in thorough mode."""
-    return 0.25 if request.config.getoption("--mode") == "fast" else 0.15
+    """MP3 duration tolerance: 10% in both modes (same rationale as rawfile_tolerance)."""
+    return 0.10
 
 
 @pytest.fixture(scope="session")
