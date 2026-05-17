@@ -23,7 +23,10 @@ SAMPLE_RATE = 2_048_000
 CENTERFREQ_HZ = 120_000_000
 CHANNEL_OFFSET_HZ = 25_000
 DURATION_S = 15.0
-SQUELCH = 0.0  # disabled — CTCSS gate is the only gate
+# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
+# signal. Enabling squelch alongside CTCSS gives both gates time to settle on
+# noise instead of racing CTCSS startup against an always-open squelch.
+SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 CONFIG_CTCSS_HZ = 100.0  # what the config requests
 CORRECT_CTCSS_HZ = 100.0  # matches the config → should pass
 WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should block
@@ -32,7 +35,8 @@ WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should b
 # Adjust this constant if the detector's startup latency changes.
 CTCSS_STARTUP_DELAY_S = 2.0
 EXPECTED_AUDIO_S = DURATION_S - CTCSS_STARTUP_DELAY_S  # 13.0 s
-TIMEOUT_S = DURATION_S * 3 + 30  # 75s
+TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 17 s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 81 s
 
 
 def pytest_generate_tests(metafunc):

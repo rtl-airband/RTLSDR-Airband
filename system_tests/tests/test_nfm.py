@@ -17,9 +17,12 @@ CENTERFREQ_HZ = 120_000_000
 CHANNEL_OFFSET_HZ = 25_000
 AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
-SQUELCH = 0.0  # disabled
+# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
+# signal so the squelch can warm up and close cleanly around it.
+SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 WAVE_RATE = 16_000  # NFM binary always outputs at 16000 Hz
-TIMEOUT_S = DURATION_S * 3 + 30  # 60s
+TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
 
 def test_nfm(
