@@ -23,8 +23,11 @@ CHANNEL_A_OFFSET_HZ = +25_000  # 120.025 MHz
 CHANNEL_B_OFFSET_HZ = -25_000  # 119.975 MHz
 AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
-SQUELCH = 0.0  # disabled for both channels
-TIMEOUT_S = DURATION_S * 3 + 30  # 60s
+# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
+# signal so the squelch can warm up and close cleanly around it.
+SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
+TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
 
 def pytest_generate_tests(metafunc):
