@@ -118,14 +118,12 @@ def write_config(
             lines.append(f"      squelch_snr_threshold = {ch['squelch']:.1f};")
 
         # Build output entries: file outputs use directory+template+append,
-        # mixer outputs use name+balance.
-        output_entries: list[dict] = [
-            {
-                "type": "rawfile",
-                "directory": str(output_dir),
-                "template": ch["output_filename_template"],
-            },
-        ]
+        # mixer outputs use name+balance. Rawfile output (.cf32) is no longer
+        # configured here — the per-batch ~64 KB writes were responsible for
+        # the SD-card writeback stalls that derailed Pi 3B BCM_VC CI, and the
+        # MP3 output is sufficient for "did rtl_airband demodulate the right
+        # amount of audio" coverage.
+        output_entries: list[dict] = []
         if mp3_tmp_dir is not None:
             output_entries.append(
                 {

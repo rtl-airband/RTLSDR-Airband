@@ -3,7 +3,7 @@ test_nfm.py — NFM demodulation end-to-end test.
 
 Uses the NFM binary only (--nfm-binary). Skipped if --nfm-binary is not provided.
 IQ: narrow FM signal at +25 kHz offset, ±3 kHz deviation, 1 kHz audio tone, 10s.
-Expected: rawfile and MP3 contain ≈10s of audio, wave_rate=16000.
+Expected: MP3 contains ≈10s of audio.
 """
 
 from pathlib import Path
@@ -28,8 +28,8 @@ TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 def test_nfm(
     nfm_binary,
     test_output_dir: Path,
-    rawfile_tolerance: float,
     mp3_tolerance: float,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
     """
@@ -71,14 +71,6 @@ def test_nfm(
 
     run_rtl_airband(nfm_binary, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.validate_rawfile(
-        output_dir=test_output_dir,
-        filename_template=filename_template,
-        expected_duration_s=DURATION_S,
-        wave_rate=WAVE_RATE,
-        tolerance=rawfile_tolerance,
-    )
-
     output_validator.validate_mp3(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
@@ -94,3 +86,9 @@ def test_nfm(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
+    overruns = stats.device("output_overrun_count")
+    assert overruns <= max_overrun_count, (
+        f"Output thread fell behind demod by {overruns} batches "
+        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
+        "were overwritten before being read"
+    )

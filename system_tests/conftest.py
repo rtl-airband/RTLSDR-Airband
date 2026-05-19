@@ -15,7 +15,22 @@ from typing import Any
 import pytest
 
 CACHE_DIR = Path(__file__).parent / ".generated_input"
-TEST_OUTPUT_DIR = Path(__file__).parent / "test_output"
+DEFAULT_TEST_OUTPUT_DIR = Path(__file__).parent / "test_output"
+
+
+def _resolve_test_output_dir(config: pytest.Config) -> Path:
+    """Return the base directory under which each test creates its own subdir.
+
+    Defaults to system_tests/test_output; can be overridden with
+    --test-output-dir, useful for pointing at a tmpfs on hosts where SD-card
+    writeback stalls perturb timing-sensitive tests.
+    """
+    try:
+        override = config.getoption("--test-output-dir")
+    except ValueError:
+        override = None
+    return Path(override) if override else DEFAULT_TEST_OUTPUT_DIR
+
 
 _use_sudo: bool = False
 
@@ -55,6 +70,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Delete the .generated_input cache before running tests",
     )
+    parser.addoption(
+        "--test-output-dir",
+        default=None,
+        help=(
+            "Override the base directory used for per-test output (default: "
+            "system_tests/test_output). Point this at a tmpfs to remove disk-"
+            "writeback jitter from timing-sensitive tests on slow-storage hosts."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -93,11 +117,15 @@ def pytest_configure(config: pytest.Config) -> None:
     except ValueError:
         pass
 
-    try:
-        if TEST_OUTPUT_DIR.exists():
-            shutil.rmtree(TEST_OUTPUT_DIR)
-    except ValueError:
-        pass
+    test_output_base = _resolve_test_output_dir(config)
+    if test_output_base.exists():
+        # Clean only contents, not the directory itself — the caller may have
+        # set up the path as a mount point (e.g. tmpfs) we shouldn't unlink.
+        for child in test_output_base.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
 
     binary_val = None
     nfm_val = None
@@ -172,9 +200,10 @@ def ensure_cache_dir() -> None:
 
 
 @pytest.fixture(scope="session")
-def _test_output_dir() -> Path:
-    TEST_OUTPUT_DIR.mkdir(exist_ok=True)
-    return TEST_OUTPUT_DIR
+def _test_output_dir(request: pytest.FixtureRequest) -> Path:
+    base = _resolve_test_output_dir(request.config)
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 @pytest.fixture
@@ -196,8 +225,8 @@ def am_binaries(request: pytest.FixtureRequest) -> list[BinaryUnderTest]:
 
 
 @pytest.fixture(scope="session")
-def rawfile_tolerance(request: pytest.FixtureRequest) -> float:
-    """Rawfile byte-count tolerance: 10% in both modes.
+def mp3_tolerance(request: pytest.FixtureRequest) -> float:
+    """MP3 duration tolerance: 10% in both modes.
 
     Fast mode (10x speedup) adds some demod-thread timing jitter — measured
     worst-case is ~6% on multichannel non-nfm under load. 10% gives a ~1.5x
@@ -207,9 +236,17 @@ def rawfile_tolerance(request: pytest.FixtureRequest) -> float:
 
 
 @pytest.fixture(scope="session")
-def mp3_tolerance(request: pytest.FixtureRequest) -> float:
-    """MP3 duration tolerance: 10% in both modes (same rationale as rawfile_tolerance)."""
-    return 0.10
+def max_overrun_count(request: pytest.FixtureRequest) -> int:
+    """Allowed output_overrun_count threshold per mode.
+
+    Thorough mode runs at real-time pace with the output thread having
+    plenty of scheduling points, so any overrun is genuinely a regression.
+    Fast mode (10x speedup) plus parallel pytest-xdist workers contending
+    for CPU does occasionally trip the producer/consumer race by one or
+    two batches even on a healthy system; allow up to 5 to absorb that
+    without losing the assertion's value as a regression sentinel.
+    """
+    return 5 if request.config.getoption("--mode") == "fast" else 0
 
 
 @pytest.fixture(scope="session")
