@@ -19,7 +19,6 @@ AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
 # The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
 # signal so the squelch can warm up and close cleanly around it.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
 TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
@@ -56,8 +55,6 @@ def test_nfm(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
-                "ctcss": None,
                 "output_filename_template": filename_template,
             }
         ],

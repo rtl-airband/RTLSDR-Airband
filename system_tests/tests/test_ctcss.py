@@ -26,7 +26,6 @@ DURATION_S = 15.0
 # The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
 # signal. Enabling squelch alongside CTCSS gives both gates time to settle on
 # noise instead of racing CTCSS startup against an always-open squelch.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 CONFIG_CTCSS_HZ = 100.0  # what the config requests
 CORRECT_CTCSS_HZ = 100.0  # matches the config → should pass
 WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should block
@@ -85,7 +84,6 @@ def test_ctcss_correct_tone(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
                 "ctcss": CONFIG_CTCSS_HZ,
                 "output_filename_template": filename_template,
             }
@@ -145,7 +143,6 @@ def test_ctcss_wrong_tone(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
                 "ctcss": CONFIG_CTCSS_HZ,
                 "output_filename_template": filename_template,
             }
