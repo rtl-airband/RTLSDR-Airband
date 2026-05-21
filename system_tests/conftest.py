@@ -54,8 +54,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         choices=["fast", "thorough"],
         default="thorough",
         help=(
-            "Test mode: 'fast' (25%% tolerances, 10x speedup, use with -n auto for parallel) "
-            "or 'thorough' (15%% tolerances, 1x speedup, serial)"
+            "Test mode: 'fast' (replay speedup, allows some output overruns, "
+            "use with -n auto for parallel) or 'thorough' (no speedup, "
+            "first-batch warm-up overrun budget only, serial)."
         ),
     )
     parser.addoption(
@@ -154,8 +155,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
         config._rtlsdr_am_binaries = bins
 
-    # Reject --mode thorough with -n (parallel execution raises overrun rates,
-    # which is incompatible with thorough mode's tighter tolerances).
+    # Reject --mode thorough with -n. Thorough mode caps output overruns at 1
+    # (first-batch warm-up only); parallel pytest-xdist workers contending for
+    # CPU produce more than that and would fail the assertion.
     try:
         mode = config.getoption("--mode")
         numprocesses = getattr(config.option, "numprocesses", None)
@@ -166,8 +168,8 @@ def pytest_configure(config: pytest.Config) -> None:
     if mode == "thorough" and numprocesses not in (None, 0, "0"):
         pytest.exit(
             "ERROR: --mode thorough is incompatible with -n / --numprocesses. "
-            "Thorough mode runs serially to ensure tight tolerances are meaningful. "
-            "Use --mode fast for parallel runs.",
+            "Thorough mode runs serially so the tight overrun budget stays "
+            "meaningful. Use --mode fast for parallel runs.",
             returncode=4,
         )
 
@@ -239,14 +241,20 @@ def mp3_tolerance(request: pytest.FixtureRequest) -> float:
 def max_overrun_count(request: pytest.FixtureRequest) -> int:
     """Allowed output_overrun_count threshold per mode.
 
-    Thorough mode runs at real-time pace with the output thread having
-    plenty of scheduling points, so any overrun is genuinely a regression.
-    Fast mode (10x speedup) plus parallel pytest-xdist workers contending
-    for CPU does occasionally trip the producer/consumer race by one or
-    two batches even on a healthy system; allow up to 5 to absorb that
-    without losing the assertion's value as a regression sentinel.
+    Thorough mode allows 1 overrun to absorb a first-batch warm-up race:
+    on the very first batch the output thread does LAME init + file
+    create + marker-tone padding before clearing dev->waveavail, and on
+    slow hosts this can occasionally exceed the 125 ms batch period —
+    the demod thread then produces a second batch with waveavail still
+    set and increments the counter by one. Anything beyond 1 is a real
+    regression in the producer/consumer pipeline.
+
+    Fast mode (10x speedup) plus parallel pytest-xdist workers
+    contending for CPU does occasionally trip the same race by a few
+    additional batches; allow up to 5 to absorb that without losing the
+    assertion's value as a regression sentinel.
     """
-    return 5 if request.config.getoption("--mode") == "fast" else 0
+    return 5 if request.config.getoption("--mode") == "fast" else 1
 
 
 @pytest.fixture(scope="session")

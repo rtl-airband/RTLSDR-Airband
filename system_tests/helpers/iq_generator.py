@@ -25,7 +25,7 @@ CENTERFREQ = 120_000_000  # Hz — aviation band (used in config, not physics)
 #
 # If DEFAULT_FFT_SIZE_LOG or the +20 tuning offset in ever change, update _FFT_SIZE and the
 # formula below to match — stale values will silently place the signal at the wrong bin and
-# scan tests will fail with unexpected rawfile sizes. Delete .generated_input/ after any
+# scan tests will fail with unexpected MP3 durations. Delete .generated_input/ after any
 # such change so fixtures are regenerated.
 _FFT_SIZE = 512  # 1 << DEFAULT_FFT_SIZE_LOG
 _BIN_RES_HZ = SAMPLE_RATE // _FFT_SIZE  # 4 000 Hz per bin

@@ -2,7 +2,7 @@
 test_multichannel.py — Two simultaneous AM channels on one device.
 
 IQ contains two AM signals at different frequency offsets. Verifies that both
-output rawfiles and MP3s contain approximately the expected amount of audio.
+output MP3s contain approximately the expected amount of audio.
 
 Parametrized over all provided binaries (non-NFM and NFM if available).
 
@@ -25,7 +25,6 @@ AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
 # The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
 # signal so the squelch can warm up and close cleanly around it.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
 TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
@@ -48,7 +47,7 @@ def test_multichannel(
     max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
-    """Two simultaneous AM channels → both rawfiles and MP3s must contain ≈10s of audio."""
+    """Two simultaneous AM channels → both MP3s must contain ≈10s of audio."""
     iq_file = iq_generator.get_or_generate_multichannel(
         offset_a_hz=CHANNEL_A_OFFSET_HZ,
         offset_b_hz=CHANNEL_B_OFFSET_HZ,
@@ -67,14 +66,10 @@ def test_multichannel(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_A_OFFSET_HZ,
-                "squelch": SQUELCH,
-                "ctcss": None,
                 "output_filename_template": "ch_a",
             },
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_B_OFFSET_HZ,
-                "squelch": SQUELCH,
-                "ctcss": None,
                 "output_filename_template": "ch_b",
             },
         ],
@@ -112,9 +107,4 @@ def test_multichannel(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

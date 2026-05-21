@@ -19,7 +19,6 @@ DURATION_S = 10.0
 # The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
 # signal, so the squelch can warm up before the carrier arrives and close
 # cleanly after it ends instead of racing input EOF.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
 TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
@@ -42,7 +41,7 @@ def test_am_squelch_open(
     max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
-    """AM signal with squelch disabled → rawfile and MP3 must contain ≈10s of audio."""
+    """AM signal opens the squelch → MP3 must contain ≈10s of audio."""
     iq_file = iq_generator.get_or_generate_am(
         offset_hz=CHANNEL_OFFSET_HZ,
         audio_hz=AUDIO_TONE_HZ,
@@ -61,8 +60,6 @@ def test_am_squelch_open(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
-                "ctcss": None,
                 "output_filename_template": filename_template,
             }
         ],
@@ -86,13 +83,8 @@ def test_am_squelch_open(
     freq_hz = CENTERFREQ_HZ + CHANNEL_OFFSET_HZ
     assert (
         stats.channel("channel_activity_counter", freq_hz) > 0
-    ), "Expected non-zero activity counter for AM channel with squelch disabled"
+    ), "Expected non-zero activity counter for AM channel opening the squelch"
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

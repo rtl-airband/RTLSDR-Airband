@@ -183,9 +183,7 @@ def test_user_provided(
                 filename_template=mx.label,
             )
 
-    # Validate each channel — MP3 only (rawfile checks dropped: they duplicate
-    # the MP3 coverage and the per-batch ~64 KB writes were responsible for
-    # the SD-card writeback stalls on Pi 3B BCM_VC CI).
+    # Validate each channel — MP3 only
     for ch in test_case.channels:
         if ch.expected_audio_s > 0:
             output_validator.validate_mp3(
@@ -205,12 +203,7 @@ def test_user_provided(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Device buffer overflowed — increase speedup_factor or reduce channel count"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)
     for ch in test_case.channels:
         if ch.expected_audio_s > 0:
             assert (

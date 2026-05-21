@@ -209,22 +209,32 @@ enum modulations {
 
 class Signal {
    public:
-    Signal(void) {
+    Signal(void) : pending_(false) {
         pthread_cond_init(&cond_, NULL);
         pthread_mutex_init(&mutex_, NULL);
     }
+    // pending_ is the predicate so a send() that races ahead of wait() is not
+    // lost: the next wait() returns immediately instead of blocking for the
+    // *next* send. Without this the demod thread overruns its first batch
+    // every time its initial send() arrives before the output thread reaches
+    // its first wait().
     void send(void) {
         pthread_mutex_lock(&mutex_);
+        pending_ = true;
         pthread_cond_signal(&cond_);
         pthread_mutex_unlock(&mutex_);
     }
     void wait(void) {
         pthread_mutex_lock(&mutex_);
-        pthread_cond_wait(&cond_, &mutex_);
+        while (!pending_) {
+            pthread_cond_wait(&cond_, &mutex_);
+        }
+        pending_ = false;
         pthread_mutex_unlock(&mutex_);
     }
 
    private:
+    bool pending_;
     pthread_cond_t cond_;
     pthread_mutex_t mutex_;
 };

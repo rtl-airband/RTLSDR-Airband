@@ -19,8 +19,6 @@ AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
 # The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
 # signal so the squelch can warm up and close cleanly around it.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
-WAVE_RATE = 16_000  # NFM binary always outputs at 16000 Hz
 TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
 TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
@@ -33,7 +31,7 @@ def test_nfm(
     speedup_factor: float,
 ) -> None:
     """
-    NFM demodulation: narrow FM signal → rawfile and MP3 must contain ≈10s of audio.
+    NFM demodulation: narrow FM signal → MP3 must contain ≈10s of audio.
     Skipped if --nfm-binary is not provided.
     """
     if nfm_binary is None:
@@ -57,8 +55,6 @@ def test_nfm(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
-                "ctcss": None,
                 "output_filename_template": filename_template,
             }
         ],
@@ -86,9 +82,4 @@ def test_nfm(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

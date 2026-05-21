@@ -90,6 +90,56 @@ def validate_mp3(
     return matches[0]
 
 
+def validate_mp3_range(
+    mp3_dir: Path,
+    filename_template: str,
+    min_duration_s: float,
+    max_duration_s: float,
+) -> Path:
+    """Assert an MP3 output exists with duration in [min_duration_s, max_duration_s].
+
+    Use this when the expected duration isn't a single value but a band — e.g.
+    a squelch-disabled run that always passes the signal but may also pass the
+    surrounding noise pad depending on tracker convergence.
+
+    Sample-rate and bitrate checks match validate_mp3(); only the duration
+    assertion differs.
+    """
+    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    assert (
+        matches
+    ), f"No .mp3 output file found matching '{filename_template}_[0-9]*.mp3' in {mp3_dir}"
+
+    actual_s = 0.0
+    for mp3_file in matches:
+        assert mp3_file.stat().st_size > 0, f"MP3 file is empty: {mp3_file.name}"
+        audio = MP3(mp3_file)
+        actual_s += audio.info.length
+        assert audio.info.sample_rate == _MP3_SAMPLE_RATE, (
+            f"Expected MP3 sample rate {_MP3_SAMPLE_RATE} Hz, "
+            f"got {audio.info.sample_rate} Hz: {mp3_file.name}"
+        )
+        assert (
+            audio.info.bitrate > 0
+        ), f"MP3 average bitrate is 0 kbps (empty or corrupt file): {mp3_file.name}"
+
+    label = (
+        matches[0].name
+        if len(matches) == 1
+        else f"{len(matches)} files (hour boundary)"
+    )
+    print(
+        f"mp3 {label}: actual={actual_s:.2f}s "
+        f"expected range=[{min_duration_s:.2f}, {max_duration_s:.2f}]s"
+    )
+    assert min_duration_s <= actual_s <= max_duration_s, (
+        f"MP3 duration {actual_s:.2f}s is outside expected range "
+        f"[{min_duration_s:.2f}, {max_duration_s:.2f}]s: {label}"
+    )
+
+    return matches[0]
+
+
 def assert_mp3_present(mp3_dir: Path, filename_template: str) -> None:
     """
     Assert that at least one non-empty MP3 file exists for this template.

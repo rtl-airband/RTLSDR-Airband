@@ -59,15 +59,12 @@ jobs:
     - name: Run system tests
       env:
         SUDO_FLAG: ${{ matrix.sudo == true && '--sudo' || '' }}
-        # Pi runners use a tmpfs at /test_data to avoid SD-card writeback
-        # stalls (single fwrite syscalls of multiple seconds were observed
-        # on Pi 3B BCM_VC). Ubuntu runners write to the default location.
-        TEST_OUTPUT_DIR_FLAG: ${{ matrix.test_output_dir != '' && format('--test-output-dir={0}', matrix.test_output_dir) || '' }}
+        TEST_OUTPUT_DIR: ${{ matrix.test_output_dir }}
       run: |
         ${{ matrix.uv_cmd }} run --no-group dev pytest system_tests/tests/ \
           --binary builds/Release/src/rtl_airband \
           $SUDO_FLAG \
-          $TEST_OUTPUT_DIR_FLAG \
+          ${TEST_OUTPUT_DIR:+--test-output-dir=$TEST_OUTPUT_DIR} \
           --mode thorough \
           --clean \
           -v

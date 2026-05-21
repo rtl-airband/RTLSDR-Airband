@@ -4,7 +4,7 @@ test_ctcss.py — CTCSS gate: correct tone passes, wrong tone is blocked.
 Two test functions, both parametrized over all provided binaries.
 
 test_ctcss_correct_tone: IQ with 100.0 Hz CTCSS + 1000 Hz voice, config asks for
-  100.0 Hz → output should contain audio (accounting for ~2s detection startup delay).
+  100.0 Hz → output should contain audio (accounting for CTCSS_STARTUP_DELAY_S).
 
 test_ctcss_wrong_tone: IQ with 125.0 Hz CTCSS + 1000 Hz voice, config asks for
   100.0 Hz → output should be absent or empty (gate stays closed).
@@ -26,7 +26,6 @@ DURATION_S = 15.0
 # The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
 # signal. Enabling squelch alongside CTCSS gives both gates time to settle on
 # noise instead of racing CTCSS startup against an always-open squelch.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 CONFIG_CTCSS_HZ = 100.0  # what the config requests
 CORRECT_CTCSS_HZ = 100.0  # matches the config → should pass
 WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should block
@@ -64,8 +63,8 @@ def test_ctcss_correct_tone(
     """
     IQ with correct CTCSS tone (100.0 Hz) → CTCSS gate opens, audio written.
 
-    Expected duration uses 13s (not 15s) to account for the ~2s CTCSS detection
-    startup delay. Tolerance is mode-dependent (15% thorough, 25% fast).
+    Expected duration is DURATION_S - CTCSS_STARTUP_DELAY_S — see the constant
+    for the CTCSS-fast-detector + squelch-open-delay derivation.
     """
     iq_file = iq_generator.get_or_generate_ctcss(
         offset_hz=CHANNEL_OFFSET_HZ,
@@ -85,7 +84,6 @@ def test_ctcss_correct_tone(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
                 "ctcss": CONFIG_CTCSS_HZ,
                 "output_filename_template": filename_template,
             }
@@ -114,12 +112,7 @@ def test_ctcss_correct_tone(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)
 
 
 def test_ctcss_wrong_tone(
@@ -150,7 +143,6 @@ def test_ctcss_wrong_tone(
         channels=[
             {
                 "freq_hz": CENTERFREQ_HZ + CHANNEL_OFFSET_HZ,
-                "squelch": SQUELCH,
                 "ctcss": CONFIG_CTCSS_HZ,
                 "output_filename_template": filename_template,
             }
@@ -180,9 +172,4 @@ def test_ctcss_wrong_tone(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

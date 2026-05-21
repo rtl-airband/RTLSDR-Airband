@@ -16,7 +16,7 @@ so they are detectable regardless of which scan freq is active:
   Tail:      noise for NOISE_PAD_S (clean shutdown)
 
 Config: scan mode, two configured frequencies (120.025 and 119.975 MHz).
-Expected: rawfile and MP3 total audio ≈ 10s (5s A + 5s B).
+Expected: MP3 total audio ≈ 10s (5s A + 5s B).
 
 Parametrized over all provided binaries (non-NFM and NFM if available).
 """
@@ -61,7 +61,7 @@ def test_scan(
     speedup_factor: float,
 ) -> None:
     """
-    Scan mode with two frequencies → rawfile and MP3 contain ≈10s of combined audio.
+    Scan mode with two frequencies → MP3 contains ≈10s of combined audio.
     """
     iq_file = iq_generator.get_or_generate_scan(
         duration_a_s=DURATION_A_S,
@@ -113,9 +113,4 @@ def test_scan(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
-    overruns = stats.device("output_overrun_count")
-    assert overruns <= max_overrun_count, (
-        f"Output thread fell behind demod by {overruns} batches "
-        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
-        "were overwritten before being read"
-    )
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)
