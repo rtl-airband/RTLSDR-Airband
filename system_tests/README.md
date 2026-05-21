@@ -1,6 +1,6 @@
 # System Tests
 
-End-to-end tests that run the actual `rtl_airband` binary against synthetically generated IQ files and validate the audio output (MP3 duration, rawfile size, and Prometheus stats).
+End-to-end tests that run the actual `rtl_airband` binary against synthetically generated IQ files and validate the audio output (MP3 duration and Prometheus stats).
 
 ## How It Works
 
@@ -8,7 +8,7 @@ Each test:
 1. Generates (or loads from cache) a synthetic IQ fixture in RTL-SDR U8 format
 2. Writes a `libconfig++` config file pointing the binary at that IQ file
 3. Runs the binary and waits for it to finish
-4. Validates the output files (`.cf32` rawfiles and MP3s) and the Prometheus stats file
+4. Validates the output MP3s and the Prometheus stats file
 
 IQ fixtures are cached in `.generated_input/` and reused across runs. Test outputs land in `test_output/<test-name>/` and are kept for debugging.
 
@@ -41,27 +41,40 @@ The `--nfm-binary` argument is optional. If omitted, NFM tests are skipped.
 
 ### Test Modes
 
-Pass `--mode` to trade off speed vs. precision:
+Pass `--mode` to trade off wall-clock time vs. strictness. MP3 duration tolerance is a flat ±10% in both modes; what differs is how many output-thread overruns the assertion will tolerate.
 
-| Mode | Tolerance | Parallelism |
-|------|-----------|-------------|
-| `fast` (default) | ±25%, 10x speedup | Safe to run with `-n auto` |
-| `thorough` | ±15% | Must run serially (no `-n`) |
+| Mode | Speedup | Overrun budget | Parallelism |
+|------|---------|----------------|-------------|
+| `thorough` (default) | 1x (real time) | up to 1 (first-batch warm-up) | Must run serially (no `-n`) |
+| `fast` | 10x | up to 5 batches | Safe to run with `-n auto` |
 
 ```bash
 # Fast parallel run
 uv run pytest tests/ --binary ../builds/Release/src/rtl_airband -n auto --mode fast
 
-# Precise serial run
+# Strict serial run
 uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --mode thorough
 ```
+
+### Output directory
+
+By default tests write per-test artifacts under `system_tests/test_output/<test-name>/`. On hosts where SD-card writeback stalls inject timing jitter (notably the Pi 4B CI runner), point this at a tmpfs:
+
+```bash
+uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --test-output-dir=/test_data
+```
+
+The `--test-output-dir` path must exist and be writable by the test process. The cleanup logic in `conftest.py` only wipes the *contents* of the directory, never the directory itself, so it is safe to point at a pre-mounted tmpfs.
+
+The CI runner is provisioned with a `/test_data` tmpfs mount; the workflow at `.github/workflows/platform_build.yml` uses it via `--test-output-dir=/test_data`. The `ubuntu-22.04-arm` runner has fast enough storage that it stays on the default path.
 
 ## Test Coverage
 
 | Test file | What it checks |
 |-----------|----------------|
 | `test_am_squelch_closed.py` | Noise-only input → no output (squelch blocks it) |
-| `test_am_squelch_open.py` | AM signal → rawfile and MP3 with correct duration |
+| `test_am_squelch_open.py` | AM signal opens the squelch → MP3 with correct duration |
+| `test_squelch_disabled.py` | `squelch_snr_threshold = 0` → gate is always open, MP3 produced |
 | `test_ctcss.py` | Correct CTCSS tone opens gate; wrong tone keeps it closed |
 | `test_multichannel.py` | Two simultaneous AM channels each produce independent audio |
 | `test_nfm.py` | NFM demodulation produces correct-duration audio (NFM binary only) |

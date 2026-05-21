@@ -2,7 +2,13 @@
 IQ fixture generator for RTLSDR-Airband system tests.
 
 Generates U8 (unsigned 8-bit interleaved I/Q) files with known signals.
-Files are cached in .generated_input/; if a file already exists it is reused.
+Each signal-bearing fixture is wrapped in NOISE_PAD_S of low-amplitude Gaussian
+noise at the start and end so the squelch / AGC / IIR filter state has time to
+converge before the carrier appears and so the demod and output pipeline can
+drain cleanly before the input thread hits EOF.
+
+Files are cached in .generated_input/; the cache filename embeds NOISE_PAD_S so
+changing the pad invalidates old fixtures. If a file already exists it is reused.
 """
 
 from pathlib import Path
@@ -19,11 +25,21 @@ CENTERFREQ = 120_000_000  # Hz — aviation band (used in config, not physics)
 #
 # If DEFAULT_FFT_SIZE_LOG or the +20 tuning offset in ever change, update _FFT_SIZE and the
 # formula below to match — stale values will silently place the signal at the wrong bin and
-# scan tests will fail with unexpected rawfile sizes. Delete .generated_input/ after any
+# scan tests will fail with unexpected MP3 durations. Delete .generated_input/ after any
 # such change so fixtures are regenerated.
 _FFT_SIZE = 512  # 1 << DEFAULT_FFT_SIZE_LOG
 _BIN_RES_HZ = SAMPLE_RATE // _FFT_SIZE  # 4 000 Hz per bin
 SCAN_DEMOD_OFFSET_HZ = -21 * _BIN_RES_HZ  # -84 000 Hz
+
+# Leading + trailing low-amplitude noise pad on every signal fixture. The lead
+# gives the squelch noise-floor tracker, AGC `agcavgfast`, and IIR filter state
+# time to converge before the carrier arrives, so squelch open is governed by
+# the deterministic open_delay (~200 audio samples) instead of warm-up race.
+# The tail lets the squelch close on noise and the demod/output/MP3 pipeline
+# drain cleanly before the input thread hits EOF.
+NOISE_PAD_S = 1.0
+_NOISE_AMPLITUDE_U8 = np.float32(0.02 * 127.5)
+_NOISE_SEED = 42
 
 _TWO_PI = np.float32(2 * np.pi)
 _SCALE = np.float32(0.5 * 127.5)
@@ -40,6 +56,31 @@ def _quantize(signal: np.ndarray, scale: np.float32 = _SCALE) -> np.ndarray:
     return np.clip(np.round(_ORIGIN + signal * scale), 0, 255).astype(np.uint8)
 
 
+def _noise_arrays(
+    duration_s: float, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate (I_u8, Q_u8) of low-amplitude Gaussian noise."""
+    n = int(SAMPLE_RATE * duration_s)
+    I = rng.standard_normal(n, dtype=np.float32) * _NOISE_AMPLITUDE_U8
+    Q = rng.standard_normal(n, dtype=np.float32) * _NOISE_AMPLITUDE_U8
+    I_u8 = np.clip(np.round(_ORIGIN + I), 0, 255).astype(np.uint8)
+    Q_u8 = np.clip(np.round(_ORIGIN + Q), 0, 255).astype(np.uint8)
+    return I_u8, Q_u8
+
+
+def _pad_with_noise(
+    I_sig: np.ndarray, Q_sig: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Prepend and append NOISE_PAD_S of noise around the signal arrays."""
+    rng = np.random.default_rng(seed=_NOISE_SEED)
+    I_lead, Q_lead = _noise_arrays(NOISE_PAD_S, rng)
+    I_tail, Q_tail = _noise_arrays(NOISE_PAD_S, rng)
+    return (
+        np.concatenate([I_lead, I_sig, I_tail]),
+        np.concatenate([Q_lead, Q_sig, Q_tail]),
+    )
+
+
 def get_or_generate_am(
     offset_hz: int,
     audio_hz: int,
@@ -50,7 +91,10 @@ def get_or_generate_am(
     Generate an AM signal at *offset_hz* from center with *audio_hz* audio tone.
     Returns path to the cached .iq file.
     """
-    filename = f"am_sr{SAMPLE_RATE}_off{offset_hz}_audio{audio_hz}_dur{duration_s}.iq"
+    filename = (
+        f"am_sr{SAMPLE_RATE}_off{offset_hz}_audio{audio_hz}"
+        f"_dur{duration_s}_pad{NOISE_PAD_S}.iq"
+    )
     path = cache_dir / filename
     if path.exists():
         return path
@@ -65,7 +109,8 @@ def get_or_generate_am(
     I = envelope * np.cos(carrier_phase)
     Q = envelope * np.sin(carrier_phase)
     del carrier_phase, envelope
-    _write_iq(path, _quantize(I), _quantize(Q))
+    I_all, Q_all = _pad_with_noise(_quantize(I), _quantize(Q))
+    _write_iq(path, I_all, Q_all)
     return path
 
 
@@ -104,7 +149,8 @@ def get_or_generate_ctcss(
     Returns path to the cached .iq file.
     """
     filename = (
-        f"ctcss_sr{SAMPLE_RATE}_off{offset_hz}_ctcss{ctcss_hz}_dur{duration_s}.iq"
+        f"ctcss_sr{SAMPLE_RATE}_off{offset_hz}_ctcss{ctcss_hz}"
+        f"_dur{duration_s}_pad{NOISE_PAD_S}.iq"
     )
     path = cache_dir / filename
     if path.exists():
@@ -122,7 +168,8 @@ def get_or_generate_ctcss(
     I = envelope * np.cos(carrier_phase)
     Q = envelope * np.sin(carrier_phase)
     del carrier_phase, envelope
-    _write_iq(path, _quantize(I), _quantize(Q))
+    I_all, Q_all = _pad_with_noise(_quantize(I), _quantize(Q))
+    _write_iq(path, I_all, Q_all)
     return path
 
 
@@ -136,7 +183,10 @@ def get_or_generate_nfm(
     Generate an NFM signal at *offset_hz* with *audio_hz* audio tone.
     Returns path to the cached .iq file.
     """
-    filename = f"nfm_sr{SAMPLE_RATE}_off{offset_hz}_audio{audio_hz}_dur{duration_s}.iq"
+    filename = (
+        f"nfm_sr{SAMPLE_RATE}_off{offset_hz}_audio{audio_hz}"
+        f"_dur{duration_s}_pad{NOISE_PAD_S}.iq"
+    )
     path = cache_dir / filename
     if path.exists():
         return path
@@ -155,7 +205,8 @@ def get_or_generate_nfm(
     I = np.cos(phase).astype(np.float32)
     Q = np.sin(phase).astype(np.float32)
     del phase
-    _write_iq(path, _quantize(I), _quantize(Q))
+    I_all, Q_all = _pad_with_noise(_quantize(I), _quantize(Q))
+    _write_iq(path, I_all, Q_all)
     return path
 
 
@@ -173,7 +224,7 @@ def get_or_generate_multichannel(
     """
     filename = (
         f"multichannel_sr{SAMPLE_RATE}_offA{offset_a_hz}_offB{offset_b_hz}"
-        f"_audio{audio_hz}_dur{duration_s}.iq"
+        f"_audio{audio_hz}_dur{duration_s}_pad{NOISE_PAD_S}.iq"
     )
     path = cache_dir / filename
     if path.exists():
@@ -191,7 +242,8 @@ def get_or_generate_multichannel(
     I = envelope * (np.cos(carrier_phase_a) + np.cos(carrier_phase_b)) * np.float32(0.5)
     Q = envelope * (np.sin(carrier_phase_a) + np.sin(carrier_phase_b)) * np.float32(0.5)
     del carrier_phase_a, carrier_phase_b, envelope
-    _write_iq(path, _quantize(I), _quantize(Q))
+    I_all, Q_all = _pad_with_noise(_quantize(I), _quantize(Q))
+    _write_iq(path, I_all, Q_all)
     return path
 
 
@@ -215,13 +267,13 @@ def get_or_generate_scan(
     """
     filename = (
         f"scan_sr{SAMPLE_RATE}_demod{SCAN_DEMOD_OFFSET_HZ}"
-        f"_durA{duration_a_s}_gap{gap_s}_durB{duration_b_s}.iq"
+        f"_durA{duration_a_s}_gap{gap_s}_durB{duration_b_s}_pad{NOISE_PAD_S}.iq"
     )
     path = cache_dir / filename
     if path.exists():
         return path
 
-    rng = np.random.default_rng(seed=42)
+    rng = np.random.default_rng(seed=_NOISE_SEED)
 
     def _am_segment(duration_s: float) -> tuple[np.ndarray, np.ndarray]:
         n = int(SAMPLE_RATE * duration_s)
@@ -236,20 +288,13 @@ def get_or_generate_scan(
         del carrier_phase, envelope
         return _quantize(I), _quantize(Q)
 
-    def _noise_segment(duration_s: float) -> tuple[np.ndarray, np.ndarray]:
-        n = int(SAMPLE_RATE * duration_s)
-        amplitude = np.float32(0.02 * 127.5)
-        I = rng.standard_normal(n, dtype=np.float32) * amplitude
-        Q = rng.standard_normal(n, dtype=np.float32) * amplitude
-        I_u8 = np.clip(np.round(_ORIGIN + I), 0, 255).astype(np.uint8)
-        Q_u8 = np.clip(np.round(_ORIGIN + Q), 0, 255).astype(np.uint8)
-        return I_u8, Q_u8
-
+    I_lead, Q_lead = _noise_arrays(NOISE_PAD_S, rng)
     I_a, Q_a = _am_segment(duration_a_s)
-    I_gap, Q_gap = _noise_segment(gap_s)
+    I_gap, Q_gap = _noise_arrays(gap_s, rng)
     I_b, Q_b = _am_segment(duration_b_s)
+    I_tail, Q_tail = _noise_arrays(NOISE_PAD_S, rng)
 
-    I_all = np.concatenate([I_a, I_gap, I_b])
-    Q_all = np.concatenate([Q_a, Q_gap, Q_b])
+    I_all = np.concatenate([I_lead, I_a, I_gap, I_b, I_tail])
+    Q_all = np.concatenate([Q_lead, Q_a, Q_gap, Q_b, Q_tail])
     _write_iq(path, I_all, Q_all)
     return path

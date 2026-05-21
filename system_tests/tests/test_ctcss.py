@@ -4,7 +4,7 @@ test_ctcss.py — CTCSS gate: correct tone passes, wrong tone is blocked.
 Two test functions, both parametrized over all provided binaries.
 
 test_ctcss_correct_tone: IQ with 100.0 Hz CTCSS + 1000 Hz voice, config asks for
-  100.0 Hz → output should contain audio (accounting for ~2s detection startup delay).
+  100.0 Hz → output should contain audio (accounting for CTCSS_STARTUP_DELAY_S).
 
 test_ctcss_wrong_tone: IQ with 125.0 Hz CTCSS + 1000 Hz voice, config asks for
   100.0 Hz → output should be absent or empty (gate stays closed).
@@ -23,16 +23,24 @@ SAMPLE_RATE = 2_048_000
 CENTERFREQ_HZ = 120_000_000
 CHANNEL_OFFSET_HZ = 25_000
 DURATION_S = 15.0
-SQUELCH = 0.0  # disabled — CTCSS gate is the only gate
+# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
+# signal. Enabling squelch alongside CTCSS gives both gates time to settle on
+# noise instead of racing CTCSS startup against an always-open squelch.
+SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
 CONFIG_CTCSS_HZ = 100.0  # what the config requests
 CORRECT_CTCSS_HZ = 100.0  # matches the config → should pass
 WRONG_CTCSS_HZ = 125.0  # not a standard CTCSS tone, does not match → should block
-# The CTCSS detector needs ~2 s of tone before it opens the gate (fast detector:
-# 0.05 s windows × ~40 confirmations at 8 kHz audio rate; see ctcss.cpp).
-# Adjust this constant if the detector's startup latency changes.
-CTCSS_STARTUP_DELAY_S = 2.0
-EXPECTED_AUDIO_S = DURATION_S - CTCSS_STARTUP_DELAY_S  # 13.0 s
-TIMEOUT_S = DURATION_S * 3 + 30  # 75s
+
+# Time from carrier-on to the CTCSS gate first opening: squelch open_delay
+# (~25 ms at 8 kHz audio rate) + one fast CTCSS window (0.05 s) ≈ 75 ms.
+# 0.1 s gives a small margin for trailing-pad gate close timing.
+# squelch.cpp:118-134 — is_open() consults the fast detector until the slow one
+# has 0.4 s of samples; the fast detector checks every 0.05 s window with no
+# confirmation count requirement (ctcss.cpp:124-163).
+CTCSS_STARTUP_DELAY_S = 0.1
+EXPECTED_AUDIO_S = DURATION_S - CTCSS_STARTUP_DELAY_S  # 14.9 s
+TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 17 s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 81 s
 
 
 def pytest_generate_tests(metafunc):
@@ -49,15 +57,15 @@ def pytest_generate_tests(metafunc):
 def test_ctcss_correct_tone(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
-    rawfile_tolerance: float,
     mp3_tolerance: float,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
     """
     IQ with correct CTCSS tone (100.0 Hz) → CTCSS gate opens, audio written.
 
-    Expected duration uses 13s (not 15s) to account for the ~2s CTCSS detection
-    startup delay. Tolerance is mode-dependent (15% thorough, 25% fast).
+    Expected duration is DURATION_S - CTCSS_STARTUP_DELAY_S — see the constant
+    for the CTCSS-fast-detector + squelch-open-delay derivation.
     """
     iq_file = iq_generator.get_or_generate_ctcss(
         offset_hz=CHANNEL_OFFSET_HZ,
@@ -91,14 +99,6 @@ def test_ctcss_correct_tone(
 
     run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.validate_rawfile(
-        output_dir=test_output_dir,
-        filename_template=filename_template,
-        expected_duration_s=EXPECTED_AUDIO_S,
-        wave_rate=binary_under_test.wave_rate,
-        tolerance=rawfile_tolerance,
-    )
-
     output_validator.validate_mp3(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
@@ -114,11 +114,13 @@ def test_ctcss_correct_tone(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)
 
 
 def test_ctcss_wrong_tone(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
     """
@@ -157,11 +159,6 @@ def test_ctcss_wrong_tone(
 
     run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.assert_output_silent(
-        output_dir=test_output_dir,
-        filename_template=filename_template,
-    )
-
     output_validator.assert_mp3_silent(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
@@ -178,3 +175,4 @@ def test_ctcss_wrong_tone(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

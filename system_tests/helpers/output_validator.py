@@ -1,11 +1,8 @@
 """
 Output validator for RTLSDR-Airband system tests.
 
-Level 2 validation: verifies rawfile byte count against expected duration,
-and MP3 duration / audio properties against expected values.
-
-Rawfile format: interleaved float32 I/Q pairs (complex float, .cf32 extension).
-Bytes per sample pair = 2 * sizeof(float32) = 8.
+Level 2 validation: verifies MP3 duration and audio properties against
+expected values.
 
 MP3 format: LAME-encoded, mono, 8000 Hz sample rate, VBR with LAME tag.
 rtl_airband appends a date+hour timestamp to the filename_template, so MP3
@@ -19,78 +16,6 @@ from mutagen.mp3 import MP3
 
 # rtl_airband hardcodes MP3_RATE = 8000 Hz for all MP3 output
 _MP3_SAMPLE_RATE = 8000
-
-
-def validate_rawfile(
-    output_dir: Path,
-    filename_template: str,
-    expected_duration_s: float,
-    wave_rate: int,
-    tolerance: float = 0.15,
-) -> None:
-    """
-    Assert that a rawfile output has a byte count within *tolerance* of expected.
-
-    The rawfile extension is .cf32 (complex float32, interleaved I/Q pairs).
-    Each sample pair is two float32 values = 8 bytes.
-
-    Args:
-        output_dir: Directory containing the output files.
-        filename_template: Filename template used in the config (without extension).
-        expected_duration_s: Expected audio duration in seconds.
-        wave_rate: Output sample rate (8000 for non-NFM, 16000 for NFM).
-        tolerance: Allowed fractional deviation from expected byte count (default ±15%).
-
-    Raises:
-        AssertionError: If no matching file is found or byte count is out of range.
-    """
-    matches = list(output_dir.glob(f"{filename_template}_[0-9]*.cf32"))
-    assert (
-        matches
-    ), f"No .cf32 output file found matching '{filename_template}*.cf32' in {output_dir}"
-    output_file = matches[0]
-    actual_bytes = output_file.stat().st_size
-
-    # expected_bytes = duration * wave_rate * 2 (I+Q pair) * 4 bytes per float32
-    expected_bytes = expected_duration_s * wave_rate * 2 * 4
-
-    deviation = abs(actual_bytes - expected_bytes) / expected_bytes
-    print(
-        f"rawfile {output_file.name}: "
-        f"actual={actual_bytes} expected={expected_bytes:.0f} "
-        f"deviation={deviation*100:.1f}% (limit ±{tolerance*100:.0f}%)"
-    )
-    assert deviation <= tolerance, (
-        f"Rawfile byte count out of range: "
-        f"actual={actual_bytes}, expected={expected_bytes:.0f} "
-        f"(±{tolerance*100:.0f}%), deviation={deviation*100:.1f}%, "
-        f"file={output_file}"
-    )
-
-
-def assert_output_silent(output_dir: Path, filename_template: str) -> None:
-    """
-    Assert that either no .cf32 file was created matching the template, or it is empty.
-
-    This is used for squelch-closed and wrong-CTCSS tests where no audio should be written.
-
-    Args:
-        output_dir: Directory that would contain the output files.
-        filename_template: Filename template used in the config (without extension).
-
-    Raises:
-        AssertionError: If a non-empty .cf32 file is found.
-    """
-    matches = list(output_dir.glob(f"{filename_template}_[0-9]*.cf32"))
-    if not matches:
-        return  # No file created — correct for squelch-closed
-
-    for output_file in matches:
-        actual_bytes = output_file.stat().st_size
-        assert actual_bytes == 0, (
-            f"Expected no audio output (squelch/CTCSS gate closed), but "
-            f"{output_file} contains {actual_bytes} bytes"
-        )
 
 
 def validate_mp3(
@@ -160,6 +85,56 @@ def validate_mp3(
     assert deviation <= tolerance, (
         f"MP3 duration {actual_s:.2f}s deviates {deviation:.1%} from "
         f"expected {expected_duration_s:.2f}s (±{tolerance:.0%}): {label}"
+    )
+
+    return matches[0]
+
+
+def validate_mp3_range(
+    mp3_dir: Path,
+    filename_template: str,
+    min_duration_s: float,
+    max_duration_s: float,
+) -> Path:
+    """Assert an MP3 output exists with duration in [min_duration_s, max_duration_s].
+
+    Use this when the expected duration isn't a single value but a band — e.g.
+    a squelch-disabled run that always passes the signal but may also pass the
+    surrounding noise pad depending on tracker convergence.
+
+    Sample-rate and bitrate checks match validate_mp3(); only the duration
+    assertion differs.
+    """
+    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    assert (
+        matches
+    ), f"No .mp3 output file found matching '{filename_template}_[0-9]*.mp3' in {mp3_dir}"
+
+    actual_s = 0.0
+    for mp3_file in matches:
+        assert mp3_file.stat().st_size > 0, f"MP3 file is empty: {mp3_file.name}"
+        audio = MP3(mp3_file)
+        actual_s += audio.info.length
+        assert audio.info.sample_rate == _MP3_SAMPLE_RATE, (
+            f"Expected MP3 sample rate {_MP3_SAMPLE_RATE} Hz, "
+            f"got {audio.info.sample_rate} Hz: {mp3_file.name}"
+        )
+        assert (
+            audio.info.bitrate > 0
+        ), f"MP3 average bitrate is 0 kbps (empty or corrupt file): {mp3_file.name}"
+
+    label = (
+        matches[0].name
+        if len(matches) == 1
+        else f"{len(matches)} files (hour boundary)"
+    )
+    print(
+        f"mp3 {label}: actual={actual_s:.2f}s "
+        f"expected range=[{min_duration_s:.2f}, {max_duration_s:.2f}]s"
+    )
+    assert min_duration_s <= actual_s <= max_duration_s, (
+        f"MP3 duration {actual_s:.2f}s is outside expected range "
+        f"[{min_duration_s:.2f}, {max_duration_s:.2f}]s: {label}"
     )
 
     return matches[0]

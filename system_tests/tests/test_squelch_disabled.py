@@ -1,15 +1,17 @@
 """
-test_nfm.py — NFM demodulation end-to-end test.
+test_squelch_disabled.py — squelch_snr_threshold = 0 → gate is effectively always open.
 
-Uses the NFM binary only (--nfm-binary). Skipped if --nfm-binary is not provided.
-IQ: narrow FM signal at +25 kHz offset, ±3 kHz deviation, 1 kHz audio tone, 10s.
-Expected: MP3 contains ≈10s of audio.
+The IQ fixture is NOISE_PAD_S of noise + DURATION_S of strong AM signal +
+NOISE_PAD_S of noise. With the squelch disabled the signal portion always
+passes (gate opens reliably) and the noise pads may also pass depending on
+how the noise-floor tracker converges, so the MP3 duration must lie in
+[DURATION_S, TOTAL_IQ_DURATION_S]. Anything shorter than DURATION_S would
+mean the disabled-gate code path is gating off real signal — a regression.
 """
 
 from pathlib import Path
 
-import pytest
-from conftest import CACHE_DIR, run_rtl_airband
+from conftest import CACHE_DIR, BinaryUnderTest, run_rtl_airband
 from helpers import config_writer, iq_generator, output_validator, stats_validator
 
 SAMPLE_RATE = 2_048_000
@@ -17,28 +19,30 @@ CENTERFREQ_HZ = 120_000_000
 CHANNEL_OFFSET_HZ = 25_000
 AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
-# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
-# signal so the squelch can warm up and close cleanly around it.
-SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
+SQUELCH = 0.0  # disabled — gate opens whenever signal >= noise floor
 TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
 TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
 
-def test_nfm(
-    nfm_binary,
+def pytest_generate_tests(metafunc):
+    """Parametrize test_squelch_disabled over all available binaries."""
+    if "binary_under_test" in metafunc.fixturenames:
+        am_bins: list[BinaryUnderTest] = metafunc.config._rtlsdr_am_binaries
+        metafunc.parametrize(
+            "binary_under_test",
+            am_bins,
+            ids=[b.label for b in am_bins],
+        )
+
+
+def test_squelch_disabled(
+    binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
-    mp3_tolerance: float,
     max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
-    """
-    NFM demodulation: narrow FM signal → MP3 must contain ≈10s of audio.
-    Skipped if --nfm-binary is not provided.
-    """
-    if nfm_binary is None:
-        pytest.skip("No NFM binary provided via --nfm-binary")
-
-    iq_file = iq_generator.get_or_generate_nfm(
+    """AM signal + squelch_snr_threshold=0 → MP3 produced, channel sees activity."""
+    iq_file = iq_generator.get_or_generate_am(
         offset_hz=CHANNEL_OFFSET_HZ,
         audio_hz=AUDIO_TONE_HZ,
         duration_s=DURATION_S,
@@ -46,7 +50,7 @@ def test_nfm(
     )
 
     config_path = test_output_dir / "rtl_airband.conf"
-    filename_template = "nfm_out"
+    filename_template = "squelch_disabled"
 
     config_writer.write_config(
         config_path=config_path,
@@ -68,20 +72,20 @@ def test_nfm(
         stats_filepath=test_output_dir / "stats.txt",
     )
 
-    run_rtl_airband(nfm_binary, config_path, timeout_s=TIMEOUT_S)
+    run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.validate_mp3(
+    output_validator.validate_mp3_range(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
-        expected_duration_s=DURATION_S,
-        tolerance=mp3_tolerance,
+        min_duration_s=DURATION_S,
+        max_duration_s=TOTAL_IQ_DURATION_S,
     )
 
     stats = stats_validator.load(test_output_dir / "stats.txt")
     freq_hz = CENTERFREQ_HZ + CHANNEL_OFFSET_HZ
     assert (
         stats.channel("channel_activity_counter", freq_hz) > 0
-    ), "Expected non-zero activity counter for NFM channel"
+    ), "Expected non-zero activity counter with squelch disabled"
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"

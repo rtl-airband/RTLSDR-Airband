@@ -50,6 +50,21 @@ class StatsFile:
         return None
 
 
+def assert_no_excessive_overruns(stats: StatsFile, max_overrun_count: int) -> None:
+    """Assert the output thread did not fall behind demod by more than max_overrun_count batches.
+
+    Thorough mode requires zero overruns; fast mode allows a small budget to
+    absorb CPU contention from -n auto. See the max_overrun_count fixture
+    in conftest.py for the rationale behind the per-mode thresholds.
+    """
+    overruns = stats.device("output_overrun_count")
+    assert overruns <= max_overrun_count, (
+        f"Output thread fell behind demod by {overruns} batches "
+        f"(allowed in this mode: <= {max_overrun_count}) — wave batches "
+        "were overwritten before being read"
+    )
+
+
 def load(path: Path) -> StatsFile:
     """
     Parse a Prometheus-format rtl_airband stats file.

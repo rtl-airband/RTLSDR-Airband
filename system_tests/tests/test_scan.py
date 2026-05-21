@@ -6,14 +6,17 @@ the signal always lands at the same fixed bin (bin 491 for fft_size=512).  With 
 file input the hardware center cannot move, so the scanner always demodulates from
 that one bin — see iq_generator.SCAN_DEMOD_OFFSET_HZ for the exact offset.
 
-The IQ fixture is a three-segment file, with BOTH signal segments placed at the
-actual demodulation bin so they are detectable regardless of which scan freq is active:
+The IQ fixture is a three-segment file wrapped in NOISE_PAD_S of leading and
+trailing noise. BOTH signal segments are placed at the actual demodulation bin
+so they are detectable regardless of which scan freq is active:
+  Lead:      noise for NOISE_PAD_S (squelch warm-up)
   Segment 1: AM at SCAN_DEMOD_OFFSET_HZ for 5s  (scanner locked on freq A)
   Segment 2: noise for 3s                         (scanner switches A → B)
   Segment 3: AM at SCAN_DEMOD_OFFSET_HZ for 5s  (scanner locked on freq B)
+  Tail:      noise for NOISE_PAD_S (clean shutdown)
 
 Config: scan mode, two configured frequencies (120.025 and 119.975 MHz).
-Expected: rawfile and MP3 total audio ≈ 10s (5s A + 5s B).
+Expected: MP3 total audio ≈ 10s (5s A + 5s B).
 
 Parametrized over all provided binaries (non-NFM and NFM if available).
 """
@@ -30,9 +33,13 @@ FREQ_B_HZ = 119_975_000  # 119.975 MHz — second scan frequency
 DURATION_A_S = 5.0
 GAP_S = 3.0  # 3s gap gives scanner plenty of time to switch (needs ~2s)
 DURATION_B_S = 5.0
-TOTAL_DURATION_S = DURATION_A_S + GAP_S + DURATION_B_S  # 13s IQ file
+# The scan fixture has NOISE_PAD_S of noise prepended and appended around the
+# A/gap/B sequence — same squelch warm-up + clean-shutdown role as other tests.
+TOTAL_IQ_DURATION_S = (
+    DURATION_A_S + GAP_S + DURATION_B_S + 2 * iq_generator.NOISE_PAD_S
+)  # 15 s
 EXPECTED_AUDIO_S = DURATION_A_S + DURATION_B_S  # ≈10s of actual signal
-TIMEOUT_S = TOTAL_DURATION_S * 3 + 30  # 69s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 75 s
 
 
 def pytest_generate_tests(metafunc):
@@ -49,12 +56,12 @@ def pytest_generate_tests(metafunc):
 def test_scan(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
-    rawfile_tolerance: float,
     mp3_tolerance: float,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
     """
-    Scan mode with two frequencies → rawfile and MP3 contain ≈10s of combined audio.
+    Scan mode with two frequencies → MP3 contains ≈10s of combined audio.
     """
     iq_file = iq_generator.get_or_generate_scan(
         duration_a_s=DURATION_A_S,
@@ -89,14 +96,6 @@ def test_scan(
 
     run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.validate_rawfile(
-        output_dir=test_output_dir,
-        filename_template=filename_template,
-        expected_duration_s=EXPECTED_AUDIO_S,
-        wave_rate=binary_under_test.wave_rate,
-        tolerance=rawfile_tolerance,
-    )
-
     output_validator.validate_mp3(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
@@ -114,3 +113,4 @@ def test_scan(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

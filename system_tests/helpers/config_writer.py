@@ -36,10 +36,12 @@ def write_config(
             - ctcss (float|None): CTCSS tone Hz, omitted if None.
             - bandwidth (int|None): NFM demodulation bandwidth in Hz, omitted if None.
             - notch (float|None): Notch filter frequency in Hz, omitted if None.
-            - output_filename_template (str): Template for rawfile output filename.
+            - output_filename_template (str): Template for MP3 output filename
+              (used only when mp3_tmp_dir is provided).
             - mixer_output (dict|None): {"name": str, "balance": float}, omitted if None.
             - scan_freqs_hz (list[int]): Scan mode only — list of frequencies in Hz.
-        output_dir: Directory where rawfile outputs are written.
+        output_dir: Directory where mixer MP3 outputs are written. Unused when
+            mixers is empty/None.
         speedup_factor: IQ replay speed factor (1.0 = real-time).
         mode: "multichannel" or "scan".
         fft_size: FFT size for the device, omitted if None (binary default).
@@ -47,10 +49,10 @@ def write_config(
             - name (str): Mixer name referenced by channel mixer_output entries.
             - label (str): Filename template for the mixer's MP3 output.
             Output files are written to output_dir.
-        mp3_tmp_dir: If provided, each channel also gets a "file" (MP3) output
-            written to this directory using the same filename_template as the
-            rawfile. The directory must already exist. rtl_airband appends a
-            date+hour timestamp to the filename; use output_validator.validate_mp3()
+        mp3_tmp_dir: If provided, each channel gets a "file" (MP3) output
+            written to this directory using output_filename_template. The
+            directory must already exist. rtl_airband appends a date+hour
+            timestamp to the filename; use output_validator.validate_mp3()
             to find and validate the resulting file.
         stats_filepath: If provided, rtl_airband writes a Prometheus-format stats
             file to this path on shutdown.
@@ -119,13 +121,7 @@ def write_config(
 
         # Build output entries: file outputs use directory+template+append,
         # mixer outputs use name+balance.
-        output_entries: list[dict] = [
-            {
-                "type": "rawfile",
-                "directory": str(output_dir),
-                "template": ch["output_filename_template"],
-            },
-        ]
+        output_entries: list[dict] = []
         if mp3_tmp_dir is not None:
             output_entries.append(
                 {

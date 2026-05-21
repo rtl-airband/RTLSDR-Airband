@@ -16,12 +16,14 @@ jobs:
         include:
           - runner: pi_4b
             platform: native
-            sudo: true
+            sudo: false
             uv_cmd: ~/.local/bin/uv
+            test_output_dir: /test_data
           - runner: ubuntu-22.04-arm
             platform: native
             sudo: false
             uv_cmd: uv
+            test_output_dir: ''
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
@@ -52,10 +54,12 @@ jobs:
     - name: Run system tests
       env:
         SUDO_FLAG: ${{ matrix.sudo == true && '--sudo' || '' }}
+        TEST_OUTPUT_DIR: ${{ matrix.test_output_dir }}
       run: |
         ${{ matrix.uv_cmd }} run --no-group dev pytest system_tests/tests/ \
           --binary builds/Release/src/rtl_airband \
           $SUDO_FLAG \
+          ${TEST_OUTPUT_DIR:+--test-output-dir=$TEST_OUTPUT_DIR} \
           --mode thorough \
           --clean \
           -v

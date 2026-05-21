@@ -2,7 +2,7 @@
 test_multichannel.py — Two simultaneous AM channels on one device.
 
 IQ contains two AM signals at different frequency offsets. Verifies that both
-output rawfiles and MP3s contain approximately the expected amount of audio.
+output MP3s contain approximately the expected amount of audio.
 
 Parametrized over all provided binaries (non-NFM and NFM if available).
 
@@ -23,8 +23,11 @@ CHANNEL_A_OFFSET_HZ = +25_000  # 120.025 MHz
 CHANNEL_B_OFFSET_HZ = -25_000  # 119.975 MHz
 AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
-SQUELCH = 0.0  # disabled for both channels
-TIMEOUT_S = DURATION_S * 3 + 30  # 60s
+# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
+# signal so the squelch can warm up and close cleanly around it.
+SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
+TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
 
 def pytest_generate_tests(metafunc):
@@ -41,11 +44,11 @@ def pytest_generate_tests(metafunc):
 def test_multichannel(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
-    rawfile_tolerance: float,
     mp3_tolerance: float,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
-    """Two simultaneous AM channels → both rawfiles and MP3s must contain ≈10s of audio."""
+    """Two simultaneous AM channels → both MP3s must contain ≈10s of audio."""
     iq_file = iq_generator.get_or_generate_multichannel(
         offset_a_hz=CHANNEL_A_OFFSET_HZ,
         offset_b_hz=CHANNEL_B_OFFSET_HZ,
@@ -84,21 +87,6 @@ def test_multichannel(
 
     run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.validate_rawfile(
-        output_dir=test_output_dir,
-        filename_template="ch_a",
-        expected_duration_s=DURATION_S,
-        wave_rate=binary_under_test.wave_rate,
-        tolerance=rawfile_tolerance,
-    )
-    output_validator.validate_rawfile(
-        output_dir=test_output_dir,
-        filename_template="ch_b",
-        expected_duration_s=DURATION_S,
-        wave_rate=binary_under_test.wave_rate,
-        tolerance=rawfile_tolerance,
-    )
-
     output_validator.validate_mp3(
         mp3_dir=test_output_dir,
         filename_template="ch_a",
@@ -124,3 +112,4 @@ def test_multichannel(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

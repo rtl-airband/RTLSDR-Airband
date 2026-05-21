@@ -15,7 +15,22 @@ from typing import Any
 import pytest
 
 CACHE_DIR = Path(__file__).parent / ".generated_input"
-TEST_OUTPUT_DIR = Path(__file__).parent / "test_output"
+DEFAULT_TEST_OUTPUT_DIR = Path(__file__).parent / "test_output"
+
+
+def _resolve_test_output_dir(config: pytest.Config) -> Path:
+    """Return the base directory under which each test creates its own subdir.
+
+    Defaults to system_tests/test_output; can be overridden with
+    --test-output-dir, useful for pointing at a tmpfs on hosts where SD-card
+    writeback stalls perturb timing-sensitive tests.
+    """
+    try:
+        override = config.getoption("--test-output-dir")
+    except ValueError:
+        override = None
+    return Path(override) if override else DEFAULT_TEST_OUTPUT_DIR
+
 
 _use_sudo: bool = False
 
@@ -39,8 +54,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         choices=["fast", "thorough"],
         default="thorough",
         help=(
-            "Test mode: 'fast' (25%% tolerances, 10x speedup, use with -n auto for parallel) "
-            "or 'thorough' (15%% tolerances, 1x speedup, serial)"
+            "Test mode: 'fast' (replay speedup, allows some output overruns, "
+            "use with -n auto for parallel) or 'thorough' (no speedup, "
+            "first-batch warm-up overrun budget only, serial)."
         ),
     )
     parser.addoption(
@@ -54,6 +70,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="Delete the .generated_input cache before running tests",
+    )
+    parser.addoption(
+        "--test-output-dir",
+        default=None,
+        help=(
+            "Override the base directory used for per-test output (default: "
+            "system_tests/test_output). Point this at a tmpfs to remove disk-"
+            "writeback jitter from timing-sensitive tests on slow-storage hosts."
+        ),
     )
 
 
@@ -93,11 +118,15 @@ def pytest_configure(config: pytest.Config) -> None:
     except ValueError:
         pass
 
-    try:
-        if TEST_OUTPUT_DIR.exists():
-            shutil.rmtree(TEST_OUTPUT_DIR)
-    except ValueError:
-        pass
+    test_output_base = _resolve_test_output_dir(config)
+    if test_output_base.exists():
+        # Clean only contents, not the directory itself — the caller may have
+        # set up the path as a mount point (e.g. tmpfs) we shouldn't unlink.
+        for child in test_output_base.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
 
     binary_val = None
     nfm_val = None
@@ -126,8 +155,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
         config._rtlsdr_am_binaries = bins
 
-    # Reject --mode thorough with -n (parallel execution raises overrun rates,
-    # which is incompatible with thorough mode's tighter tolerances).
+    # Reject --mode thorough with -n. Thorough mode caps output overruns at 1
+    # (first-batch warm-up only); parallel pytest-xdist workers contending for
+    # CPU produce more than that and would fail the assertion.
     try:
         mode = config.getoption("--mode")
         numprocesses = getattr(config.option, "numprocesses", None)
@@ -138,8 +168,8 @@ def pytest_configure(config: pytest.Config) -> None:
     if mode == "thorough" and numprocesses not in (None, 0, "0"):
         pytest.exit(
             "ERROR: --mode thorough is incompatible with -n / --numprocesses. "
-            "Thorough mode runs serially to ensure tight tolerances are meaningful. "
-            "Use --mode fast for parallel runs.",
+            "Thorough mode runs serially so the tight overrun budget stays "
+            "meaningful. Use --mode fast for parallel runs.",
             returncode=4,
         )
 
@@ -172,9 +202,10 @@ def ensure_cache_dir() -> None:
 
 
 @pytest.fixture(scope="session")
-def _test_output_dir() -> Path:
-    TEST_OUTPUT_DIR.mkdir(exist_ok=True)
-    return TEST_OUTPUT_DIR
+def _test_output_dir(request: pytest.FixtureRequest) -> Path:
+    base = _resolve_test_output_dir(request.config)
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 @pytest.fixture
@@ -196,15 +227,34 @@ def am_binaries(request: pytest.FixtureRequest) -> list[BinaryUnderTest]:
 
 
 @pytest.fixture(scope="session")
-def rawfile_tolerance(request: pytest.FixtureRequest) -> float:
-    """Rawfile byte-count tolerance: 25% in fast mode, 15% in thorough mode."""
-    return 0.25 if request.config.getoption("--mode") == "fast" else 0.15
+def mp3_tolerance(request: pytest.FixtureRequest) -> float:
+    """MP3 duration tolerance: 10% in both modes.
+
+    Fast mode (10x speedup) adds some demod-thread timing jitter — measured
+    worst-case is ~6% on multichannel non-nfm under load. 10% gives a ~1.5x
+    margin over that; tightening further risks intermittent CI failures.
+    """
+    return 0.10
 
 
 @pytest.fixture(scope="session")
-def mp3_tolerance(request: pytest.FixtureRequest) -> float:
-    """MP3 duration tolerance: 25% in fast mode, 15% in thorough mode."""
-    return 0.25 if request.config.getoption("--mode") == "fast" else 0.15
+def max_overrun_count(request: pytest.FixtureRequest) -> int:
+    """Allowed output_overrun_count threshold per mode.
+
+    Thorough mode allows 1 overrun to absorb a first-batch warm-up race:
+    on the very first batch the output thread does LAME init + file
+    create + marker-tone padding before clearing dev->waveavail, and on
+    slow hosts this can occasionally exceed the 125 ms batch period —
+    the demod thread then produces a second batch with waveavail still
+    set and increments the counter by one. Anything beyond 1 is a real
+    regression in the producer/consumer pipeline.
+
+    Fast mode (10x speedup) plus parallel pytest-xdist workers
+    contending for CPU does occasionally trip the same race by a few
+    additional batches; allow up to 5 to absorb that without losing the
+    assertion's value as a regression sentinel.
+    """
+    return 5 if request.config.getoption("--mode") == "fast" else 1
 
 
 @pytest.fixture(scope="session")

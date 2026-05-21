@@ -16,8 +16,12 @@ CENTERFREQ_HZ = 120_000_000
 CHANNEL_OFFSET_HZ = 25_000
 AUDIO_TONE_HZ = 1_000
 DURATION_S = 10.0
-SQUELCH = 0.0  # disabled — signal should always open squelch
-TIMEOUT_S = DURATION_S * 3 + 30  # 60s
+# The IQ fixture has NOISE_PAD_S of noise prepended and appended around the
+# signal, so the squelch can warm up before the carrier arrives and close
+# cleanly after it ends instead of racing input EOF.
+SQUELCH = 9.54  # dB SNR threshold (squelch.cpp default)
+TOTAL_IQ_DURATION_S = DURATION_S + 2 * iq_generator.NOISE_PAD_S  # 12 s
+TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 
 
 def pytest_generate_tests(metafunc):
@@ -34,11 +38,11 @@ def pytest_generate_tests(metafunc):
 def test_am_squelch_open(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
-    rawfile_tolerance: float,
     mp3_tolerance: float,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
-    """AM signal with squelch disabled → rawfile and MP3 must contain ≈10s of audio."""
+    """AM signal opens the squelch → MP3 must contain ≈10s of audio."""
     iq_file = iq_generator.get_or_generate_am(
         offset_hz=CHANNEL_OFFSET_HZ,
         audio_hz=AUDIO_TONE_HZ,
@@ -71,14 +75,6 @@ def test_am_squelch_open(
 
     run_rtl_airband(binary_under_test.path, config_path, timeout_s=TIMEOUT_S)
 
-    output_validator.validate_rawfile(
-        output_dir=test_output_dir,
-        filename_template=filename_template,
-        expected_duration_s=DURATION_S,
-        wave_rate=binary_under_test.wave_rate,
-        tolerance=rawfile_tolerance,
-    )
-
     output_validator.validate_mp3(
         mp3_dir=test_output_dir,
         filename_template=filename_template,
@@ -90,7 +86,8 @@ def test_am_squelch_open(
     freq_hz = CENTERFREQ_HZ + CHANNEL_OFFSET_HZ
     assert (
         stats.channel("channel_activity_counter", freq_hz) > 0
-    ), "Expected non-zero activity counter for AM channel with squelch disabled"
+    ), "Expected non-zero activity counter for AM channel opening the squelch"
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Unexpected device buffer overflow"
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)

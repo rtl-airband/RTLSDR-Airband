@@ -88,8 +88,8 @@ def test_user_provided(
     test_case: UserTestCase | None,
     request: pytest.FixtureRequest,
     test_output_dir: Path,
-    rawfile_tolerance: float,
     mp3_tolerance: float,
+    max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
     """
@@ -110,10 +110,8 @@ def test_user_provided(
         if binary_path_str is None:
             pytest.skip("NFM binary not provided via --nfm-binary")
         binary_path = Path(binary_path_str).resolve()
-        wave_rate = 16_000
     else:  # "non-nfm"
         binary_path = Path(request.config.getoption("--binary")).resolve()
-        wave_rate = 8_000
 
     # Check IQ file exists
     iq_file = test_case.iq_file
@@ -185,16 +183,9 @@ def test_user_provided(
                 filename_template=mx.label,
             )
 
-    # Validate each channel — rawfile and MP3
+    # Validate each channel — MP3 only
     for ch in test_case.channels:
         if ch.expected_audio_s > 0:
-            output_validator.validate_rawfile(
-                output_dir=test_output_dir,
-                filename_template=ch.label,
-                expected_duration_s=ch.expected_audio_s,
-                wave_rate=wave_rate,
-                tolerance=rawfile_tolerance,
-            )
             output_validator.validate_mp3(
                 mp3_dir=test_output_dir,
                 filename_template=ch.label,
@@ -202,10 +193,6 @@ def test_user_provided(
                 tolerance=mp3_tolerance,
             )
         else:
-            output_validator.assert_output_silent(
-                output_dir=test_output_dir,
-                filename_template=ch.label,
-            )
             output_validator.assert_mp3_silent(
                 mp3_dir=test_output_dir,
                 filename_template=ch.label,
@@ -216,6 +203,7 @@ def test_user_provided(
     assert (
         stats.device("buffer_overflow_count") == 0
     ), "Device buffer overflowed — increase speedup_factor or reduce channel count"
+    stats_validator.assert_no_excessive_overruns(stats, max_overrun_count)
     for ch in test_case.channels:
         if ch.expected_audio_s > 0:
             assert (
