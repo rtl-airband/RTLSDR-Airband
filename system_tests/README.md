@@ -17,6 +17,8 @@ IQ fixtures are cached in `.generated_input/` and reused across runs. Test outpu
 > rm -rf system_tests/.generated_input/
 > ```
 
+The full fixture set is a few hundred MB. On a space-constrained host you can cap the cache with `--generated-input-max-bytes` (see [Cache size limit](#cache-size-limit) below).
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) — Python package manager
@@ -66,7 +68,37 @@ uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --test-output-di
 
 The `--test-output-dir` path must exist and be writable by the test process. The cleanup logic in `conftest.py` only wipes the *contents* of the directory, never the directory itself, so it is safe to point at a pre-mounted tmpfs.
 
-The CI runner is provisioned with a `/test_data` tmpfs mount; the workflow at `.github/workflows/platform_build.yml` uses it via `--test-output-dir=/test_data`. The `ubuntu-22.04-arm` runner has fast enough storage that it stays on the default path.
+### Cache directory
+
+By default IQ fixtures are cached under `system_tests/.generated_input/`. Override with `--generated-input-dir` to point the cache at a tmpfs, which keeps fixture reads/writes off slow or wear-sensitive storage (e.g. the Pi runners' SD cards):
+
+```bash
+uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --generated-input-dir=/test_data/generated_input
+```
+
+Like `--test-output-dir`, `--clean` only wipes the *contents* of this directory, so it is safe to point at a pre-mounted tmpfs subdirectory. Keep it a **sibling** of the output directory (not a parent/child), so the two cleanups don't interfere.
+
+### Cache size limit
+
+The cache holds every distinct IQ fixture generated during a run (a few hundred MB in total). By default it is unbounded. On a host with limited disk — or when the cache lives on a small tmpfs — cap it with `--generated-input-max-bytes`:
+
+```bash
+uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --generated-input-max-bytes=90M
+```
+
+The value accepts a `K`/`M`/`G` suffix or a plain byte count. When set, the least-recently-used fixtures are evicted before a new one is written, so the on-disk total stays within budget. Fixtures reused within a run (e.g. across the non-nfm/nfm parametrization) stay warm and are not regenerated. A single fixture larger than the whole budget is still written. Tests run serially in `--mode thorough`, so the working set is small: the peak is one fixture at a time (the largest is ~66 MiB), which comfortably fits a budget below the total cache size.
+
+### CI tmpfs layout
+
+The Pi CI runners are provisioned with a 100 MB `/test_data` tmpfs mount. `.github/workflows/platform_build.yml` puts both the cache and the output on it, in sibling subdirectories, and caps the cache so both fit:
+
+```
+--test-output-dir=/test_data/test_output
+--generated-input-dir=/test_data/generated_input
+--generated-input-max-bytes=70M
+```
+
+This keeps all fixture and output I/O off the SD card. The `ubuntu-22.04-arm` runner has fast enough storage that it stays on the default (unbounded, on-disk) paths.
 
 ## Test Coverage
 

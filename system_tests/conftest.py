@@ -13,9 +13,50 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from helpers import iq_generator
 
-CACHE_DIR = Path(__file__).parent / ".generated_input"
+DEFAULT_CACHE_DIR = Path(__file__).parent / ".generated_input"
 DEFAULT_TEST_OUTPUT_DIR = Path(__file__).parent / "test_output"
+
+_SIZE_SUFFIXES = {"K": 1024, "M": 1024**2, "G": 1024**3}
+
+
+def parse_size(value: str | None) -> int | None:
+    """Parse a byte-size string into an int; None/empty means unlimited.
+
+    Accepts a plain byte count ("94371840") or a K/M/G suffix ("90M", "1.5G").
+    Raises ValueError on a malformed value.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    mult = 1
+    if s[-1].upper() in _SIZE_SUFFIXES:
+        mult = _SIZE_SUFFIXES[s[-1].upper()]
+        s = s[:-1]
+    try:
+        n = int(float(s) * mult)
+    except ValueError as exc:
+        raise ValueError(f"invalid size {value!r}") from exc
+    if n < 0:
+        raise ValueError(f"size must be non-negative, got {value!r}")
+    return n
+
+
+def _resolve_cache_dir(config: pytest.Config) -> Path:
+    """Return the IQ-fixture cache directory.
+
+    Defaults to system_tests/.generated_input; can be overridden with
+    --generated-input-dir, useful for pointing the cache at a tmpfs to avoid
+    SD-card wear on hosts like the Pi CI runners.
+    """
+    try:
+        override = config.getoption("--generated-input-dir")
+    except ValueError:
+        override = None
+    return Path(override) if override else DEFAULT_CACHE_DIR
 
 
 def _resolve_test_output_dir(config: pytest.Config) -> Path:
@@ -72,6 +113,25 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Delete the .generated_input cache before running tests",
     )
     parser.addoption(
+        "--generated-input-dir",
+        default=None,
+        help=(
+            "Override the directory used to cache generated IQ fixtures "
+            "(default: system_tests/.generated_input). Point this at a tmpfs to "
+            "keep fixture reads/writes off slow or wear-sensitive storage."
+        ),
+    )
+    parser.addoption(
+        "--generated-input-max-bytes",
+        default=None,
+        help=(
+            "Cap the .generated_input cache at this size (e.g. 90M, 1.5G, or a "
+            "plain byte count). Least-recently-used fixtures are evicted before "
+            "a new one is written. Default: unlimited (no eviction). Useful when "
+            "the cache lives on a small tmpfs."
+        ),
+    )
+    parser.addoption(
         "--test-output-dir",
         default=None,
         help=(
@@ -113,10 +173,27 @@ def pytest_configure(config: pytest.Config) -> None:
         pass
 
     try:
-        if config.getoption("--clean") and CACHE_DIR.exists():
-            shutil.rmtree(CACHE_DIR)
+        if config.getoption("--clean"):
+            cache_dir = _resolve_cache_dir(config)
+            if cache_dir.exists():
+                # Wipe contents, not the dir itself — it may be a tmpfs mount
+                # point (e.g. a subdir of /test_data) we shouldn't unlink.
+                for child in cache_dir.iterdir():
+                    if child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
     except ValueError:
         pass
+
+    try:
+        raw_budget = config.getoption("--generated-input-max-bytes")
+    except ValueError:
+        raw_budget = None  # option not registered yet (e.g. plugin loading)
+    try:
+        iq_generator.set_cache_budget(parse_size(raw_budget))
+    except ValueError as exc:
+        pytest.exit(f"ERROR: {exc}", returncode=4)
 
     test_output_base = _resolve_test_output_dir(config)
     if test_output_base.exists():
@@ -196,9 +273,12 @@ def nfm_binary(request: pytest.FixtureRequest) -> Path | None:
     return p
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_cache_dir() -> None:
-    CACHE_DIR.mkdir(exist_ok=True)
+@pytest.fixture(scope="session")
+def cache_dir(request: pytest.FixtureRequest) -> Path:
+    """IQ-fixture cache directory (overridable via --generated-input-dir)."""
+    d = _resolve_cache_dir(request.config)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 @pytest.fixture(scope="session")
