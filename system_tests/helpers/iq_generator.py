@@ -17,6 +17,7 @@ within budget — useful when the cache lives on a small tmpfs. Default is
 unlimited (no eviction).
 """
 
+import os
 from collections import OrderedDict
 from pathlib import Path
 
@@ -62,10 +63,8 @@ _ORIGIN = np.float32(128)
 # budget. Recency is tracked in _lru (insertion order = LRU..MRU); a cache hit
 # or a fresh write marks that file most-recently-used via _touch().
 #
-# These are process-global and reset per session by set_cache_budget(). The
-# accounting assumes a single generator thread (tests run serially in
-# --mode thorough); under pytest-xdist, workers would share the cache dir with
-# independent per-process budgets and could collectively exceed it.
+# State is process-global and reset per session by set_cache_budget(). A budget
+# assumes a single generator process; conftest rejects a budget under xdist.
 # ---------------------------------------------------------------------------
 
 _cache_max_bytes: int | None = None
@@ -134,6 +133,8 @@ def _evict_for(cache_dir: Path, incoming_bytes: int, protect_name: str) -> None:
         if total + incoming_bytes <= _cache_max_bytes:
             break
         if name == protect_name:
+            # Defensive: callers only write not-yet-existing files, so the
+            # incoming name is never seeded into _lru — this branch never fires.
             continue
         victim = cache_dir / name
         if victim.exists():
@@ -143,11 +144,19 @@ def _evict_for(cache_dir: Path, incoming_bytes: int, protect_name: str) -> None:
 
 
 def _write_iq(path: Path, I_u8: np.ndarray, Q_u8: np.ndarray) -> None:
-    """Interleave I/Q arrays and write as raw bytes, honoring the cache budget."""
+    """Interleave I/Q arrays and write as raw bytes, honoring the cache budget.
+
+    The write is atomic (temp file + os.replace) so a concurrent reader — e.g.
+    another xdist worker whose rtl_airband is opening this same shared fixture —
+    never sees a partially written file. The temp name avoids the *.iq glob so
+    it isn't counted toward the budget or picked up as a fixture.
+    """
     iq = np.column_stack([I_u8, Q_u8]).flatten()
     data = iq.tobytes()
     _evict_for(path.parent, len(data), path.name)
-    path.write_bytes(data)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
     _touch(path)
 
 

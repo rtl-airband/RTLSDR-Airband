@@ -45,6 +45,34 @@ def parse_size(value: str | None) -> int | None:
     return n
 
 
+def _wipe_dir_contents(path: Path) -> None:
+    """Delete everything inside *path*, leaving the directory itself in place.
+
+    The dir may be a tmpfs mount point (e.g. a subdir of /test_data) we must
+    not unlink.
+    """
+    if not path.exists():
+        return
+    for child in path.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
+def _is_xdist_controller(config: pytest.Config) -> bool:
+    """True on the controlling process (or a non-xdist run), False on a worker.
+
+    pytest-xdist sets `config.workerinput` only on worker processes. Session-wide
+    destructive setup (wiping the shared test-output and cache dirs) must run
+    exactly once, on the controller, before workers boot — never from each
+    worker. Otherwise a late-starting worker's wipe deletes a live test's output
+    dir mid-run (staggered worker startup spans ~1s under load, longer than a
+    fast-mode test), causing intermittent "stats file not found" failures.
+    """
+    return not hasattr(config, "workerinput")
+
+
 def _resolve_cache_dir(config: pytest.Config) -> Path:
     """Return the IQ-fixture cache directory.
 
@@ -172,17 +200,13 @@ def pytest_configure(config: pytest.Config) -> None:
     except ValueError:
         pass
 
+    # Session-wide destructive cleanup runs once on the controller, before
+    # xdist workers boot — never per-worker (see _is_xdist_controller).
+    is_controller = _is_xdist_controller(config)
+
     try:
-        if config.getoption("--clean"):
-            cache_dir = _resolve_cache_dir(config)
-            if cache_dir.exists():
-                # Wipe contents, not the dir itself — it may be a tmpfs mount
-                # point (e.g. a subdir of /test_data) we shouldn't unlink.
-                for child in cache_dir.iterdir():
-                    if child.is_dir():
-                        shutil.rmtree(child)
-                    else:
-                        child.unlink()
+        if is_controller and config.getoption("--clean"):
+            _wipe_dir_contents(_resolve_cache_dir(config))
     except ValueError:
         pass
 
@@ -191,19 +215,13 @@ def pytest_configure(config: pytest.Config) -> None:
     except ValueError:
         raw_budget = None  # option not registered yet (e.g. plugin loading)
     try:
-        iq_generator.set_cache_budget(parse_size(raw_budget))
+        cache_budget = parse_size(raw_budget)
     except ValueError as exc:
         pytest.exit(f"ERROR: {exc}", returncode=4)
+    iq_generator.set_cache_budget(cache_budget)
 
-    test_output_base = _resolve_test_output_dir(config)
-    if test_output_base.exists():
-        # Clean only contents, not the directory itself — the caller may have
-        # set up the path as a mount point (e.g. tmpfs) we shouldn't unlink.
-        for child in test_output_base.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
+    if is_controller:
+        _wipe_dir_contents(_resolve_test_output_dir(config))
 
     binary_val = None
     nfm_val = None
@@ -247,6 +265,16 @@ def pytest_configure(config: pytest.Config) -> None:
             "ERROR: --mode thorough is incompatible with -n / --numprocesses. "
             "Thorough mode runs serially so the tight overrun budget stays "
             "meaningful. Use --mode fast for parallel runs.",
+            returncode=4,
+        )
+
+    if cache_budget is not None and numprocesses not in (None, 0, "0"):
+        pytest.exit(
+            "ERROR: --generated-input-max-bytes is incompatible with -n / "
+            "--numprocesses. The LRU budget is per-process module state; under "
+            "xdist, workers would enforce independent budgets over a shared "
+            "cache dir and could unlink a fixture another worker is reading. "
+            "Run serially, or drop the budget for parallel runs.",
             returncode=4,
         )
 

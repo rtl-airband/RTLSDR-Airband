@@ -1,6 +1,7 @@
 """
 test_iq_cache.py — unit tests for the LRU byte-budget cache in iq_generator
-and the --generated-input-max-bytes size parser in conftest.
+and the cache/output helpers in conftest (size parser, dir resolution, the
+xdist-controller guard, and the directory-wipe helper).
 
 These exercise pure helper logic and do not run the rtl_airband binary.
 """
@@ -10,15 +11,29 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import DEFAULT_CACHE_DIR, _resolve_cache_dir, parse_size
+from conftest import (
+    DEFAULT_CACHE_DIR,
+    DEFAULT_TEST_OUTPUT_DIR,
+    _is_xdist_controller,
+    _resolve_cache_dir,
+    _resolve_test_output_dir,
+    _wipe_dir_contents,
+    parse_size,
+)
 from helpers import iq_generator
 
 
 class _FakeConfig:  # pylint: disable=too-few-public-methods
-    """Minimal pytest.Config stand-in for testing option resolvers."""
+    """Minimal pytest.Config stand-in for testing option resolvers.
 
-    def __init__(self, options: dict):
+    workerinput is set only when provided, mirroring pytest-xdist (the attribute
+    exists on workers, is absent on the controller).
+    """
+
+    def __init__(self, options: dict, workerinput: dict | None = None):
         self._options = options
+        if workerinput is not None:
+            self.workerinput = workerinput
 
     def getoption(self, name: str):
         if name in self._options:
@@ -84,7 +99,7 @@ def test_parse_size_valid(value, expected):
     assert parse_size(value) == expected
 
 
-@pytest.mark.parametrize("value", ["abc", "10X", "1.2.3", "-5", "-1M"])
+@pytest.mark.parametrize("value", ["abc", "10X", "1.2.3", "-5", "-1M", "K", "M"])
 def test_parse_size_invalid(value):
     with pytest.raises(ValueError):
         parse_size(value)
@@ -108,6 +123,49 @@ def test_resolve_cache_dir_override(tmp_path):
 def test_resolve_cache_dir_option_absent():
     # Option not registered (e.g. plugin loading) → fall back to default.
     assert _resolve_cache_dir(_FakeConfig({})) == DEFAULT_CACHE_DIR
+
+
+def test_resolve_test_output_dir_default():
+    cfg = _FakeConfig({"--test-output-dir": None})
+    assert _resolve_test_output_dir(cfg) == DEFAULT_TEST_OUTPUT_DIR
+
+
+def test_resolve_test_output_dir_override(tmp_path):
+    cfg = _FakeConfig({"--test-output-dir": str(tmp_path)})
+    assert _resolve_test_output_dir(cfg) == tmp_path
+
+
+# ---------------------------------------------------------------------------
+# xdist controller guard + directory wipe
+# ---------------------------------------------------------------------------
+
+
+def test_is_xdist_controller_when_no_workerinput():
+    # No workerinput attr → controller (or a non-xdist run).
+    assert _is_xdist_controller(_FakeConfig({})) is True
+
+
+def test_is_xdist_controller_false_on_worker():
+    cfg = _FakeConfig({}, workerinput={"workerid": "gw3"})  # xdist sets this on workers
+    assert _is_xdist_controller(cfg) is False
+
+
+def test_wipe_dir_contents_removes_children_keeps_dir(tmp_path):
+    (tmp_path / "a.txt").write_text("x")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "b.txt").write_text("y")
+
+    _wipe_dir_contents(tmp_path)
+
+    assert tmp_path.exists()  # dir itself preserved (may be a mount point)
+    assert not list(tmp_path.iterdir())
+
+
+def test_wipe_dir_contents_noop_on_missing_dir(tmp_path):
+    missing = tmp_path / "does_not_exist"
+    _wipe_dir_contents(missing)  # must not raise
+    assert not missing.exists()
 
 
 # ---------------------------------------------------------------------------
