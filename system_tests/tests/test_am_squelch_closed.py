@@ -8,7 +8,7 @@ test_am_squelch_closed[nfm].
 
 from pathlib import Path
 
-from conftest import CACHE_DIR, BinaryUnderTest, run_rtl_airband
+from conftest import BinaryUnderTest, run_rtl_airband
 from helpers import config_writer, iq_generator, output_validator, stats_validator
 
 SAMPLE_RATE = 2_048_000
@@ -33,13 +33,14 @@ def pytest_generate_tests(metafunc):
 def test_am_squelch_closed(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
+    cache_dir: Path,
     max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
     """Noise-only IQ with squelch enabled → no MP3 file (or empty file) created."""
     iq_file = iq_generator.get_or_generate_noise(
         duration_s=DURATION_S,
-        cache_dir=CACHE_DIR,
+        cache_dir=cache_dir,
     )
 
     config_path = test_output_dir / "rtl_airband.conf"

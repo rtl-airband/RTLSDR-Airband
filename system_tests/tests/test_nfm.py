@@ -9,7 +9,7 @@ Expected: MP3 contains ≈10s of audio.
 from pathlib import Path
 
 import pytest
-from conftest import CACHE_DIR, run_rtl_airband
+from conftest import run_rtl_airband
 from helpers import config_writer, iq_generator, output_validator, stats_validator
 
 SAMPLE_RATE = 2_048_000
@@ -26,6 +26,7 @@ TIMEOUT_S = TOTAL_IQ_DURATION_S * 3 + 30  # 66 s
 def test_nfm(
     nfm_binary,
     test_output_dir: Path,
+    cache_dir: Path,
     mp3_tolerance: float,
     max_overrun_count: int,
     speedup_factor: float,
@@ -41,7 +42,7 @@ def test_nfm(
         offset_hz=CHANNEL_OFFSET_HZ,
         audio_hz=AUDIO_TONE_HZ,
         duration_s=DURATION_S,
-        cache_dir=CACHE_DIR,
+        cache_dir=cache_dir,
     )
 
     config_path = test_output_dir / "rtl_airband.conf"

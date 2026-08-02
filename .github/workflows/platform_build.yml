@@ -18,17 +18,23 @@ jobs:
             platform: rpiv2
             sudo: true
             uv_cmd: ~/.local/bin/uv
-            test_output_dir: /test_data
+            test_output_dir: /test_data/test_output
+            generated_input_dir: /test_data/generated_input
+            generated_input_max_bytes: 70M
           - runner: pi_4b
             platform: native
             sudo: false
             uv_cmd: ~/.local/bin/uv
-            test_output_dir: /test_data
+            test_output_dir: /test_data/test_output
+            generated_input_dir: /test_data/generated_input
+            generated_input_max_bytes: 70M
           - runner: ubuntu-22.04-arm
             platform: native
             sudo: false
             uv_cmd: uv
             test_output_dir: ''
+            generated_input_dir: ''
+            generated_input_max_bytes: ''
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
@@ -60,11 +66,15 @@ jobs:
       env:
         SUDO_FLAG: ${{ matrix.sudo == true && '--sudo' || '' }}
         TEST_OUTPUT_DIR: ${{ matrix.test_output_dir }}
+        GENERATED_INPUT_DIR: ${{ matrix.generated_input_dir }}
+        GENERATED_INPUT_MAX_BYTES: ${{ matrix.generated_input_max_bytes }}
       run: |
         ${{ matrix.uv_cmd }} run --no-group dev pytest system_tests/tests/ \
           --binary builds/Release/src/rtl_airband \
           $SUDO_FLAG \
           ${TEST_OUTPUT_DIR:+--test-output-dir=$TEST_OUTPUT_DIR} \
+          ${GENERATED_INPUT_DIR:+--generated-input-dir=$GENERATED_INPUT_DIR} \
+          ${GENERATED_INPUT_MAX_BYTES:+--generated-input-max-bytes=$GENERATED_INPUT_MAX_BYTES} \
           --mode thorough \
           --clean \
           -v

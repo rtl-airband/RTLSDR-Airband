@@ -9,8 +9,16 @@ drain cleanly before the input thread hits EOF.
 
 Files are cached in .generated_input/; the cache filename embeds NOISE_PAD_S so
 changing the pad invalidates old fixtures. If a file already exists it is reused.
+
+The cache can be bounded to a byte budget via set_cache_budget() (wired to the
+--generated-input-max-bytes CLI option). When set, the least-recently-used
+fixtures are evicted before a new one is written so the on-disk total stays
+within budget — useful when the cache lives on a small tmpfs. Default is
+unlimited (no eviction).
 """
 
+import os
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -46,10 +54,110 @@ _SCALE = np.float32(0.5 * 127.5)
 _ORIGIN = np.float32(128)
 
 
+# ---------------------------------------------------------------------------
+# LRU cache budget
+#
+# When _cache_max_bytes is None the cache is unlimited and nothing is ever
+# evicted (original behavior). When set, _evict_for() removes least-recently-
+# used fixtures before a new one is written so the on-disk total stays within
+# budget. Recency is tracked in _lru (insertion order = LRU..MRU); a cache hit
+# or a fresh write marks that file most-recently-used via _touch().
+#
+# State is process-global and reset per session by set_cache_budget(). A budget
+# assumes a single generator process; conftest rejects a budget under xdist.
+# ---------------------------------------------------------------------------
+
+_cache_max_bytes: int | None = None
+_lru: "OrderedDict[str, None]" = OrderedDict()
+_seeded_dirs: set[Path] = set()
+
+
+def set_cache_budget(max_bytes: int | None) -> None:
+    """Set the cache byte budget (None = unlimited) and reset recency tracking."""
+    global _cache_max_bytes  # pylint: disable=global-statement
+    _cache_max_bytes = max_bytes
+    _lru.clear()
+    _seeded_dirs.clear()
+
+
+def _touch(path: Path) -> None:
+    """Mark *path* most-recently-used.
+
+    Seeds pre-existing on-disk fixtures first (when a budget is active) so a
+    cache hit before the session's first write can't jump ahead of older files
+    in the LRU order.
+    """
+    if _cache_max_bytes is not None:
+        _seed(path.parent)
+    _lru.pop(path.name, None)
+    _lru[path.name] = None
+
+
+def _register_hit(path: Path) -> Path:
+    """Record a cache hit and return the path (keeps reused fixtures warm)."""
+    _touch(path)
+    return path
+
+
+def _seed(cache_dir: Path) -> None:
+    """Populate the LRU from fixtures already on disk, oldest first.
+
+    Runs once per directory so eviction works even without a --clean run that
+    starts from an empty cache. Ordered by mtime so pre-existing files evict
+    oldest-first.
+    """
+    if cache_dir in _seeded_dirs:
+        return
+    _seeded_dirs.add(cache_dir)
+    existing = [f for f in cache_dir.glob("*.iq") if f.is_file()]
+    for f in sorted(existing, key=lambda p: p.stat().st_mtime):
+        if f.name not in _lru:
+            _lru[f.name] = None
+
+
+def _current_bytes(cache_dir: Path) -> int:
+    return sum(f.stat().st_size for f in cache_dir.glob("*.iq") if f.is_file())
+
+
+def _evict_for(cache_dir: Path, incoming_bytes: int, protect_name: str) -> None:
+    """Evict LRU fixtures until *incoming_bytes* fits within the budget.
+
+    A file larger than the whole budget is still written (after evicting
+    everything else) — the current fixture is always needed.
+    """
+    if _cache_max_bytes is None:
+        return
+    _seed(cache_dir)
+    total = _current_bytes(cache_dir)
+    for name in list(_lru.keys()):
+        if total + incoming_bytes <= _cache_max_bytes:
+            break
+        if name == protect_name:
+            # Defensive: callers only write not-yet-existing files, so the
+            # incoming name is never seeded into _lru — this branch never fires.
+            continue
+        victim = cache_dir / name
+        if victim.exists():
+            total -= victim.stat().st_size
+            victim.unlink()
+        _lru.pop(name, None)
+
+
 def _write_iq(path: Path, I_u8: np.ndarray, Q_u8: np.ndarray) -> None:
-    """Interleave I/Q arrays and write as raw bytes."""
+    """Interleave I/Q arrays and write as raw bytes, honoring the cache budget.
+
+    The write is atomic (temp file + os.replace) so a concurrent reader — e.g.
+    another xdist worker whose rtl_airband is opening this same shared fixture —
+    never sees a partially written file. The temp name avoids the *.iq glob so
+    it isn't counted toward the budget or picked up as a fixture.
+    """
     iq = np.column_stack([I_u8, Q_u8]).flatten()
-    path.write_bytes(iq.tobytes())
+    data = iq.tobytes()
+    _evict_for(path.parent, len(data), path.name)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+    _touch(path)
 
 
 def _quantize(signal: np.ndarray, scale: np.float32 = _SCALE) -> np.ndarray:
@@ -97,7 +205,7 @@ def get_or_generate_am(
     )
     path = cache_dir / filename
     if path.exists():
-        return path
+        return _register_hit(path)
 
     num_samples = int(SAMPLE_RATE * duration_s)
     t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
@@ -125,7 +233,7 @@ def get_or_generate_noise(
     filename = f"noise_sr{SAMPLE_RATE}_dur{duration_s}.iq"
     path = cache_dir / filename
     if path.exists():
-        return path
+        return _register_hit(path)
 
     num_samples = int(SAMPLE_RATE * duration_s)
     rng = np.random.default_rng(seed=42)
@@ -154,7 +262,7 @@ def get_or_generate_ctcss(
     )
     path = cache_dir / filename
     if path.exists():
-        return path
+        return _register_hit(path)
 
     num_samples = int(SAMPLE_RATE * duration_s)
     t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
@@ -189,7 +297,7 @@ def get_or_generate_nfm(
     )
     path = cache_dir / filename
     if path.exists():
-        return path
+        return _register_hit(path)
 
     deviation = 3000  # Hz, narrow FM ±3 kHz
     num_samples = int(SAMPLE_RATE * duration_s)
@@ -228,7 +336,7 @@ def get_or_generate_multichannel(
     )
     path = cache_dir / filename
     if path.exists():
-        return path
+        return _register_hit(path)
 
     num_samples = int(SAMPLE_RATE * duration_s)
     t = np.linspace(0, duration_s, num_samples, dtype=np.float32, endpoint=False)
@@ -271,7 +379,7 @@ def get_or_generate_scan(
     )
     path = cache_dir / filename
     if path.exists():
-        return path
+        return _register_hit(path)
 
     rng = np.random.default_rng(seed=_NOISE_SEED)
 

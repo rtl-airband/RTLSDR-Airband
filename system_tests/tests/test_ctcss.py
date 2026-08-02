@@ -16,7 +16,7 @@ bin (k=6) in both the fast (0.05s) and slow (0.4s) CTCSS detectors at 8 kHz and
 
 from pathlib import Path
 
-from conftest import CACHE_DIR, BinaryUnderTest, run_rtl_airband
+from conftest import BinaryUnderTest, run_rtl_airband
 from helpers import config_writer, iq_generator, output_validator, stats_validator
 
 SAMPLE_RATE = 2_048_000
@@ -56,6 +56,7 @@ def pytest_generate_tests(metafunc):
 def test_ctcss_correct_tone(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
+    cache_dir: Path,
     mp3_tolerance: float,
     max_overrun_count: int,
     speedup_factor: float,
@@ -70,7 +71,7 @@ def test_ctcss_correct_tone(
         offset_hz=CHANNEL_OFFSET_HZ,
         ctcss_hz=CORRECT_CTCSS_HZ,
         duration_s=DURATION_S,
-        cache_dir=CACHE_DIR,
+        cache_dir=cache_dir,
     )
 
     config_path = test_output_dir / "rtl_airband.conf"
@@ -118,6 +119,7 @@ def test_ctcss_correct_tone(
 def test_ctcss_wrong_tone(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
+    cache_dir: Path,
     max_overrun_count: int,
     speedup_factor: float,
 ) -> None:
@@ -129,7 +131,7 @@ def test_ctcss_wrong_tone(
         offset_hz=CHANNEL_OFFSET_HZ,
         ctcss_hz=WRONG_CTCSS_HZ,
         duration_s=DURATION_S,
-        cache_dir=CACHE_DIR,
+        cache_dir=cache_dir,
     )
 
     config_path = test_output_dir / "rtl_airband.conf"

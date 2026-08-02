@@ -23,7 +23,7 @@ Parametrized over all provided binaries (non-NFM and NFM if available).
 
 from pathlib import Path
 
-from conftest import CACHE_DIR, BinaryUnderTest, run_rtl_airband
+from conftest import BinaryUnderTest, run_rtl_airband
 from helpers import config_writer, iq_generator, output_validator, stats_validator
 
 SAMPLE_RATE = 2_048_000
@@ -56,6 +56,7 @@ def pytest_generate_tests(metafunc):
 def test_scan(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
+    cache_dir: Path,
     mp3_tolerance: float,
     max_overrun_count: int,
     speedup_factor: float,
@@ -67,7 +68,7 @@ def test_scan(
         duration_a_s=DURATION_A_S,
         gap_s=GAP_S,
         duration_b_s=DURATION_B_S,
-        cache_dir=CACHE_DIR,
+        cache_dir=cache_dir,
     )
 
     config_path = test_output_dir / "rtl_airband.conf"
