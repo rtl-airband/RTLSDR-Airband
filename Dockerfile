@@ -1,5 +1,6 @@
 # build container
-FROM debian:bookworm-slim AS build
+# Pinned: last snapshot with arm/v5, needed for the arm/v6 build (v6->v5 fallback).
+FROM debian:bookworm-20260713-slim AS build
 
 # install build dependencies
 RUN apt-get update && \
@@ -62,7 +63,8 @@ RUN ./build_dir/src/unittests
 
 
 # application container
-FROM debian:bookworm-slim
+# Pinned for arm/v6, see build stage above.
+FROM debian:bookworm-20260713-slim
 
 # install runtime dependencies
 RUN apt-get update && \
