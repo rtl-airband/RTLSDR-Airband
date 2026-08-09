@@ -1,0 +1,4 @@
+# Local build output; must NOT ship in the build context.
+# Note: .git is intentionally kept so find_version can read the git tag.
+build/
+builds/

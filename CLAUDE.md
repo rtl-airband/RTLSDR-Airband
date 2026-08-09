@@ -69,6 +69,22 @@ Key CMake flags (all in `src/CMakeLists.txt`):
 | `BUILD_UNITTESTS` | OFF | Build Google Test unit tests |
 | `BCM_VC` | OFF | Broadcom VideoCore GPU FFT (RPi v2 only) |
 
+## Docker
+
+The container image is built from a multi-stage `Dockerfile` based on `alpine:latest` (musl libc). Alpine is used because it ships a native `linux/arm/v6` image, so a single base covers every Raspberry Pi model (Pi 1/Zero armv6 through Pi 5 arm64) — Debian dropped the armel/`arm/v5` variant that the arm/v6 build previously relied on via fallback.
+
+- Build/runtime dependencies come from `apk`. Note the Alpine-specific package names: `libconfig++` (Alpine splits the C++ binding into its own package), `libstdc++` (not in the base image), `fftw-single-libs`, `libpulse`, and `pkgconf` (provides `pkg-config`).
+- SoapySDR, the rtl-sdr-blog fork (built from source for RTL-SDR Blog V4 support), and libmirisdr-4 are compiled from source with CMake and installed to `/usr` — musl only searches `/lib` and `/usr/lib`, not `/usr/local/lib`. `ENV CMAKE_POLICY_VERSION_MINIMUM=3.5` lets their pre-3.5 `cmake_minimum_required` configure under Alpine's CMake 4.
+- Both stages run `unittests`, so a broken build fails `docker build`. `scripts/find_version` is POSIX `sh` (Alpine has no bash).
+
+```bash
+# Build the image for the host architecture
+docker build -t rtlsdr-airband .
+
+# Build a specific architecture (requires QEMU/binfmt for cross-arch)
+docker buildx build --platform linux/arm/v6 --load -t rtlsdr-airband:armv6 .
+```
+
 ## Code Formatting and Pre-commit
 
 Uses clang-format v14 with Chromium style (indent=4, column limit=200, config in `.clang-format`).
@@ -94,7 +110,7 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 
 ## CI and Pull Request Checks
 
-Three workflows run on every PR (`.github/workflows/`):
+Four workflows run on pull requests (`.github/workflows/`); the container build also runs on merges to `main`, tags, and a daily schedule:
 
 **`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
 
@@ -108,6 +124,8 @@ cmake -B builds/Release_nfm    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNI
 Then runs `unittests` for all four, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
 
 **`platform_build.yml`** — builds and tests an AM Release configuration (`PLATFORM=native`) on a Pi 4B runner and an `ubuntu-22.04-arm` runner, then runs unit tests and system tests. (Pi 3B runner is currently disabled.)
+
+**`build_docker_containers.yml`** — builds and pushes the multi-arch container image (`linux/amd64`, `386`, `arm64`, `arm/v6`, `arm/v7`) to GitHub Container Registry, one job per platform via QEMU. Each pushed image is smoke-tested (`rtl_airband -v`) before the per-arch digests are merged into a single manifest.
 
 **Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
 
