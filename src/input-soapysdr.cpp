@@ -279,7 +279,8 @@ void* soapysdr_rx_thread(void* ctx) {
     SoapySDRDevice* sdr = dev_data->dev;
     assert(sdr != NULL);
 
-    unsigned char buf[SOAPYSDR_BUFSIZE];
+    // Heap-allocate; a SOAPYSDR_BUFSIZE local overflows musl's 128 KiB thread stack.
+    unsigned char* buf = (unsigned char*)XCALLOC(SOAPYSDR_BUFSIZE, sizeof(unsigned char));
     // size of the buffer in number of I/Q sample pairs
     size_t num_elems = SOAPYSDR_BUFSIZE / (2 * input->bytes_per_sample);
 
@@ -313,6 +314,7 @@ void* soapysdr_rx_thread(void* ctx) {
         circbuffer_append(input, buf, (size_t)(samples_read * 2 * input->bytes_per_sample));
     }
 cleanup:
+    free(buf);
     SoapySDRDevice_deactivateStream(sdr, rxStream, 0, 0);
     SoapySDRDevice_closeStream(sdr, rxStream);
     SoapySDRDevice_unmake(sdr);

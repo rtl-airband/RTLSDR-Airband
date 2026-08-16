@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 PROJECT_ROOT_PATH="$(cd "$(dirname "$0")/.." || exit; pwd)"
 PROJECT_GIT_DIR_PATH="${PROJECT_ROOT_PATH}/.git"
@@ -12,10 +12,12 @@ fi
 
 # if the proejct root directory matches the naming convetion of an extracted archive then
 # get the version number out of that
-if [[ "${PROJECT_DIR_NAME}" =~ ^RTLSDR-Airband-[0-9]*\.[0-9]*\.[0-9]*$ ]]; then
-    echo "${PROJECT_DIR_NAME}" | cut -d '-' -f 3
-    exit 0
-fi
+case "${PROJECT_DIR_NAME}" in
+    RTLSDR-Airband-[0-9]*.[0-9]*.[0-9]*)
+        echo "${PROJECT_DIR_NAME}" | cut -d '-' -f 3
+        exit 0
+        ;;
+esac
 
 # print an error string to stderr (any output to stdout is considered success)
 >&2 echo "did not find a git root directory at ${PROJECT_GIT_DIR_PATH} and failed to extract a version from ${PROJECT_DIR_NAME}"

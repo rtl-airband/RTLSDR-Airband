@@ -78,6 +78,14 @@ jobs:
         context: .
         outputs: type=image,name=ghcr.io/${{ steps.prep.outputs.repo_lowercase }},push-by-digest=true,name-canonical=true,push=true
 
+    # Smoke test the pushed image: exercises the entrypoint binary and fails on
+    # any unresolved runtime library. Runs the matrix platform via QEMU.
+    - name: Smoke test image
+      run: |
+        image="ghcr.io/${{ steps.prep.outputs.repo_lowercase }}@${{ steps.build.outputs.digest }}"
+        docker run --rm --pull=always --platform ${{ matrix.platform }} \
+          --entrypoint /app/rtl_airband "$image" -v
+
     - name: Export digest
       run: |
         mkdir -p /tmp/digests

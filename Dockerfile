@@ -1,51 +1,52 @@
 # build container
-# Pinned: last snapshot with arm/v5, needed for the arm/v6 build (v6->v5 fallback).
-FROM debian:bookworm-20260713-slim AS build
+FROM alpine:latest AS build
 
 # install build dependencies
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-      build-essential \
-      cmake \
-      libmp3lame-dev \
-      libshout3-dev \
-      libconfig++-dev \
-      libfftw3-dev \
-      libsoapysdr-dev \
-      libpulse-dev \
-      \
-      git \
-      ca-certificates \
-      libusb-1.0-0-dev \
-      debhelper \
-      pkg-config \
-      && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN apk add --no-cache \
+    build-base \
+    cmake \
+    git \
+    pkgconf \
+    linux-headers \
+    ca-certificates \
+    lame-dev \
+    libshout-dev \
+    libconfig-dev \
+    fftw-dev \
+    libusb-dev \
+    pulseaudio-dev \
+    soapy-sdr-dev \
+    airspyone-host-dev
+
+# Alpine ships CMake 4, which dropped compatibility with cmake_minimum_required
+# < 3.5, allow configuring them anyway.
+ENV CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 # set working dir for compiling dependencies
 WORKDIR /build_dependencies
 
-# compile / install rtl-sdr-blog version of rtl-sdr for v4 support
-RUN git clone https://github.com/rtlsdrblog/rtl-sdr-blog && \
-    cd rtl-sdr-blog/ && \
-    dpkg-buildpackage -b --no-sign && \
-    cd .. && \
-    dpkg -i librtlsdr0_*.deb && \
-    dpkg -i librtlsdr-dev_*.deb && \
-    dpkg -i rtl-sdr_*.deb
+# compile / install rtl-sdr-blog version of rtl-sdr for v4 support.
+RUN git clone --depth 1 https://github.com/rtlsdrblog/rtl-sdr-blog && \
+    git -C rtl-sdr-blog log -1 --format='rtl-sdr-blog checked out: %H (%ci)' && \
+    cmake -S rtl-sdr-blog -B rtl-sdr-blog/build \
+    -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -DDETACH_KERNEL_DRIVER=ON && \
+    cmake --build rtl-sdr-blog/build -j4 && \
+    cmake --install rtl-sdr-blog/build
 
 # compile / install libmirisdr-4
-RUN git clone https://github.com/f4exb/libmirisdr-4 && \
-  cd libmirisdr-4 && \
-  mkdir build && \
-  cd build && \
-  cmake ../ && \
-  VERBOSE=1 make install && \
-  ldconfig
+RUN git clone --depth 1 https://github.com/f4exb/libmirisdr-4 && \
+    git -C libmirisdr-4 log -1 --format='libmirisdr-4 checked out: %H (%ci)' && \
+    cmake -S libmirisdr-4 -B libmirisdr-4/build -DCMAKE_INSTALL_PREFIX=/usr && \
+    cmake --build libmirisdr-4/build -j4 && \
+    cmake --install libmirisdr-4/build
 
-# TODO: build anything from source?
+# compile / install the SoapySDR airspy driver module. SoapySDR itself comes from the
+# soapy-sdr-dev package; its device modules are not packaged for Alpine.
+RUN git clone --depth 1 https://github.com/pothosware/SoapyAirspy && \
+    git -C SoapyAirspy log -1 --format='SoapyAirspy checked out: %H (%ci)' && \
+    cmake -S SoapyAirspy -B SoapyAirspy/build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build SoapyAirspy/build -j4 && \
+    cmake --install SoapyAirspy/build
 
 # set working dir for project build
 WORKDIR /rtl_airband_build
@@ -63,40 +64,31 @@ RUN ./build_dir/src/unittests
 
 
 # application container
-# Pinned for arm/v6, see build stage above.
-FROM debian:bookworm-20260713-slim
+FROM alpine:latest
 
 # install runtime dependencies
-RUN apt-get update && \
-  apt-get upgrade -y && \
-  apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
     tini \
-    libc6 \
-    libmp3lame0 \
-    libshout3 \
-    libconfig++9v5 \
-    libfftw3-single3 \
-    libsoapysdr0.8 \
-    libpulse0 \
-    libusb-1.0-0-dev \
+    libstdc++ \
+    lame-libs \
+    libshout \
+    libconfig++ \
+    fftw-single-libs \
+    libpulse \
+    libusb \
     ca-certificates \
-  && \
-  apt-get clean && \
-  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    soapy-sdr \
+    airspyone-host-libs
 
-# install (from build container) rtl-sdr-blog version of rtl-sdr for v4 support
-COPY --from=build /build_dependencies/librtlsdr0_*.deb /build_dependencies/librtlsdr-dev_*.deb /build_dependencies/rtl-sdr_*.deb /tmp/
-RUN dpkg -i /tmp/librtlsdr0_*.deb && \
-    dpkg -i /tmp/librtlsdr-dev_*.deb && \
-    dpkg -i /tmp/rtl-sdr_*.deb && \
-    rm -rf /tmp/*.deb && \
-    echo '' | tee --append /etc/modprobe.d/rtl_sdr.conf && \
-    echo 'blacklist dvb_usb_rtl28xxun' | tee --append /etc/modprobe.d/rtl_sdr.conf && \
-    echo 'blacklist rtl2832' | tee --append /etc/modprobe.d/rtl_sdr.conf && \
-    echo 'blacklist rtl2830' | tee --append /etc/modprobe.d/rtl_sdr.conf
+# copy (from build container) the source-built SDR libraries and the airspy Soapy module
+COPY --from=build /usr/lib/librtlsdr.so* /usr/lib/
+COPY --from=build /usr/lib/libmirisdr.so* /usr/lib/
+COPY --from=build /usr/lib/SoapySDR/modules0.8/libairspySupport.so /usr/lib/SoapySDR/modules0.8/
 
-# copy (from build container) libmirisdr-4 library
-COPY --from=build /usr/local/lib/libmirisdr.so.4 /usr/local/lib/
+# blacklist the in-kernel DVB drivers so rtl-sdr can claim the device
+RUN mkdir -p /etc/modprobe.d && \
+    printf '\nblacklist dvb_usb_rtl28xxun\nblacklist rtl2832\nblacklist rtl2830\n' \
+    >> /etc/modprobe.d/rtl_sdr.conf
 
 # Copy rtl_airband from the build container
 COPY LICENSE /app/
@@ -108,6 +100,6 @@ RUN chmod a+x /app/unittests /app/rtl_airband
 RUN /app/unittests
 
 # Use tini as init and run rtl_airband from /app/
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--"]
 WORKDIR /app/
 CMD ["/app/rtl_airband", "-F", "-e", "-c", "/app/rtl_airband.conf"]
