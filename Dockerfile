@@ -14,7 +14,9 @@ RUN apk add --no-cache \
     libconfig-dev \
     fftw-dev \
     libusb-dev \
-    pulseaudio-dev
+    pulseaudio-dev \
+    soapy-sdr-dev \
+    airspyone-host-dev
 
 # Alpine ships CMake 4, which dropped compatibility with cmake_minimum_required
 # < 3.5, allow configuring them anyway.
@@ -38,12 +40,13 @@ RUN git clone --depth 1 https://github.com/f4exb/libmirisdr-4 && \
     cmake --build libmirisdr-4/build -j4 && \
     cmake --install libmirisdr-4/build
 
-# compile / install SoapySDR (not packaged for Alpine)
-RUN git clone --depth 1 https://github.com/pothosware/SoapySDR && \
-    git -C SoapySDR log -1 --format='SoapySDR checked out: %H (%ci)' && \
-    cmake -S SoapySDR -B SoapySDR/build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build SoapySDR/build -j4 && \
-    cmake --install SoapySDR/build
+# compile / install the SoapySDR airspy driver module. SoapySDR itself comes from the
+# soapy-sdr-dev package; its device modules are not packaged for Alpine.
+RUN git clone --depth 1 https://github.com/pothosware/SoapyAirspy && \
+    git -C SoapyAirspy log -1 --format='SoapyAirspy checked out: %H (%ci)' && \
+    cmake -S SoapyAirspy -B SoapyAirspy/build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build SoapyAirspy/build -j4 && \
+    cmake --install SoapyAirspy/build
 
 # set working dir for project build
 WORKDIR /rtl_airband_build
@@ -73,12 +76,14 @@ RUN apk add --no-cache \
     fftw-single-libs \
     libpulse \
     libusb \
-    ca-certificates
+    ca-certificates \
+    soapy-sdr \
+    airspyone-host-libs
 
-# copy (from build container) the source-built SDR libraries
+# copy (from build container) the source-built SDR libraries and the airspy Soapy module
 COPY --from=build /usr/lib/librtlsdr.so* /usr/lib/
 COPY --from=build /usr/lib/libmirisdr.so* /usr/lib/
-COPY --from=build /usr/lib/libSoapySDR.so* /usr/lib/
+COPY --from=build /usr/lib/SoapySDR/modules0.8/libairspySupport.so /usr/lib/SoapySDR/modules0.8/
 
 # blacklist the in-kernel DVB drivers so rtl-sdr can claim the device
 RUN mkdir -p /etc/modprobe.d && \
