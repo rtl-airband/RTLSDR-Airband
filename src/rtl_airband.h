@@ -126,6 +126,7 @@ struct icecast_data {
     const char* genre;
     const char* description;
     bool send_scan_freq_tags;
+    size_t long_delay_count;
     shout_t* shout;
 };
 
