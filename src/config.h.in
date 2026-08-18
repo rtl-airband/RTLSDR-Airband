@@ -25,6 +25,7 @@
 #cmakedefine WITH_SOAPYSDR
 #cmakedefine WITH_PROFILING
 #cmakedefine WITH_PULSEAUDIO
+#cmakedefine WITH_SRT
 #cmakedefine NFM
 #cmakedefine WITH_BCM_VC
 #cmakedefine LIBSHOUT_HAS_TLS
