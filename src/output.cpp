@@ -367,10 +367,6 @@ static void close_file(output_t* output) {
 static void close_if_necessary(output_t* output) {
     file_data* fdata = (file_data*)(output->data);
 
-    static const double MIN_TRANSMISSION_TIME_SEC = 1.0;
-    static const double MAX_TRANSMISSION_TIME_SEC = 60.0 * 60.0;
-    static const double MAX_TRANSMISSION_IDLE_SEC = 0.5;
-
     if (!fdata || !fdata->f) {
         return;
     }
@@ -382,7 +378,7 @@ static void close_if_necessary(output_t* output) {
         double duration_sec = delta_sec(&fdata->open_time, &current_time);
         double idle_sec = delta_sec(&fdata->last_write_time, &current_time);
 
-        if (duration_sec > MAX_TRANSMISSION_TIME_SEC || (duration_sec > MIN_TRANSMISSION_TIME_SEC && idle_sec > MAX_TRANSMISSION_IDLE_SEC)) {
+        if (should_close_transmission_file(duration_sec, idle_sec, min_transmission_time, max_transmission_time, max_transmission_idle)) {
             debug_print("closing file %s, duration %f sec, idle %f sec\n", fdata->file_path.c_str(), duration_sec, idle_sec);
             close_file(output);
         }

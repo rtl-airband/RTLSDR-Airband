@@ -84,3 +84,7 @@ string make_dated_subdirs(const string& basedir, const struct tm* time) {
     // on any error return empty string
     return "";
 }
+
+bool should_close_transmission_file(double duration_sec, double idle_sec, double min_transmission_time, double max_transmission_time, double max_transmission_idle) {
+    return (duration_sec > max_transmission_time) || (duration_sec > min_transmission_time && idle_sec > max_transmission_idle);
+}
