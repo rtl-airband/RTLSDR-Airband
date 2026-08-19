@@ -165,3 +165,31 @@ TEST_F(HelperFunctionsTest, make_dated_subdirs_some_exist) {
     EXPECT_EQ(make_dated_subdirs(temp_dir, &time_struct), dir_through_month + "08");
     EXPECT_TRUE(dir_exists(dir_through_month + "08"));
 }
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_max_duration) {
+    EXPECT_TRUE(should_close_transmission_file(6001.0, 0.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_duration_at_max) {
+    EXPECT_FALSE(should_close_transmission_file(6000.0, 0.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_idle_after_min_duration) {
+    EXPECT_TRUE(should_close_transmission_file(10.0, 0.6, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_idle_at_max) {
+    EXPECT_FALSE(should_close_transmission_file(10.0, 0.5, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_idle_before_min_duration) {
+    EXPECT_FALSE(should_close_transmission_file(0.5, 10.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_duration_at_min) {
+    EXPECT_FALSE(should_close_transmission_file(1.0, 10.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_transmission_file_no_idle) {
+    EXPECT_FALSE(should_close_transmission_file(10.0, 0.1, 1.0, 6000.0, 0.5));
+}
