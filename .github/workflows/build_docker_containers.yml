@@ -41,6 +41,14 @@ jobs:
       run: |
         echo "platform_pair=${platform//\//-}" >> $GITHUB_OUTPUT
         echo "repo_lowercase=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+        # No pull request pushes to the registry: a PR from a fork only gets a
+        # read-only GITHUB_TOKEN, so the org package write is denied. PRs build
+        # and smoke test locally instead.
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "push=false" >> $GITHUB_OUTPUT
+        else
+          echo "push=true" >> $GITHUB_OUTPUT
+        fi
       env:
         platform: ${{ matrix.platform }}
 
@@ -62,13 +70,14 @@ jobs:
       uses: docker/setup-buildx-action@v4
 
     - name: Login to GitHub Container Registry
+      if: steps.prep.outputs.push == 'true'
       uses: docker/login-action@v4
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build and push by digest
+    - name: Build image
       id: build
       uses: docker/build-push-action@v7
       with:
@@ -76,23 +85,31 @@ jobs:
         cache-from: type=gha,scope=build-${{ steps.prep.outputs.platform_pair }}
         cache-to: type=gha,mode=max,scope=build-${{ steps.prep.outputs.platform_pair }}
         context: .
-        outputs: type=image,name=ghcr.io/${{ steps.prep.outputs.repo_lowercase }},push-by-digest=true,name-canonical=true,push=true
+        load: ${{ steps.prep.outputs.push != 'true' }}
+        tags: ${{ steps.prep.outputs.push != 'true' && 'rtlsdr-airband:ci' || '' }}
+        outputs: ${{ steps.prep.outputs.push == 'true' && format('type=image,name=ghcr.io/{0},push-by-digest=true,name-canonical=true,push=true', steps.prep.outputs.repo_lowercase) || '' }}
 
-    # Smoke test the pushed image: exercises the entrypoint binary and fails on
-    # any unresolved runtime library. Runs the matrix platform via QEMU.
+    # Smoke test the built image: exercises the entrypoint binary and fails on
+    # any unresolved runtime library. Runs the matrix platform via QEMU. When
+    # pushing, pull the image back to verify the push; otherwise require the
+    # locally loaded one so a failed load can't fall back to a stale registry tag.
     - name: Smoke test image
+      env:
+        image: ${{ steps.prep.outputs.push == 'true' && format('ghcr.io/{0}@{1}', steps.prep.outputs.repo_lowercase, steps.build.outputs.digest) || 'rtlsdr-airband:ci' }}
+        pull: ${{ steps.prep.outputs.push == 'true' && '--pull=always' || '--pull=never' }}
       run: |
-        image="ghcr.io/${{ steps.prep.outputs.repo_lowercase }}@${{ steps.build.outputs.digest }}"
-        docker run --rm --pull=always --platform ${{ matrix.platform }} \
+        docker run --rm "$pull" --platform ${{ matrix.platform }} \
           --entrypoint /app/rtl_airband "$image" -v
 
     - name: Export digest
+      if: steps.prep.outputs.push == 'true'
       run: |
         mkdir -p /tmp/digests
         digest="${{ steps.build.outputs.digest }}"
         touch "/tmp/digests/${digest#sha256:}"
 
     - name: Upload digest
+      if: steps.prep.outputs.push == 'true'
       uses: actions/upload-artifact@v7
       with:
         name: digests-${{ steps.prep.outputs.platform_pair }}
@@ -101,6 +118,9 @@ jobs:
         retention-days: 1
 
   merge:
+    # Mirrors the build job's prep.push output; a job-level `if` can't read
+    # another job's step outputs. Nothing to merge when nothing was pushed.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: build
     permissions:

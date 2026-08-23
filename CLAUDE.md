@@ -125,7 +125,7 @@ Then runs `unittests` for all four, installs the Release+NFM build, and smoke-te
 
 **`platform_build.yml`** — builds and tests an AM Release configuration (`PLATFORM=native`) on a Pi 4B runner and an `ubuntu-22.04-arm` runner, then runs unit tests and system tests. (Pi 3B runner is currently disabled.)
 
-**`build_docker_containers.yml`** — builds and pushes the multi-arch container image (`linux/amd64`, `386`, `arm64`, `arm/v6`, `arm/v7`) to GitHub Container Registry, one job per platform via QEMU. Each pushed image is smoke-tested (`rtl_airband -v`) before the per-arch digests are merged into a single manifest.
+**`build_docker_containers.yml`** — builds the multi-arch container image (`linux/amd64`, `386`, `arm64`, `arm/v6`, `arm/v7`), one job per platform via QEMU. Every image is smoke-tested (`rtl_airband -v`) under its target platform. On push/tag/schedule/`workflow_dispatch` the images are pushed by digest to GitHub Container Registry and the `merge` job combines the per-arch digests into a single manifest. Pull requests only build and smoke-test locally (`--load`); a fork PR gets a read-only `GITHUB_TOKEN`, so the registry push is denied. The `Prepare` step's `push` output gates this.
 
 **Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
 
