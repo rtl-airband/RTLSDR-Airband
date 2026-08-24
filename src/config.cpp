@@ -121,6 +121,17 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
             fdata->append = (!outs[o].exists("append")) || (bool)(outs[o]["append"]);
             fdata->split_on_transmission = outs[o].exists("split_on_transmission") ? (bool)(outs[o]["split_on_transmission"]) : false;
             fdata->include_freq = outs[o].exists("include_freq") ? (bool)(outs[o]["include_freq"]) : false;
+            if (fdata->split_on_transmission) {
+                fdata->min_rx_seconds = outs[o].exists("min_rx_seconds") ? (double)(outs[o]["min_rx_seconds"]) : 0.0;
+                if (outs[o].exists("post_write_script")) {
+                    fdata->post_write_script = outs[o]["post_write_script"].c_str();
+                }
+            } else {
+                if (outs[o].exists("min_rx_seconds") || outs[o].exists("post_write_script")) {
+                    cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: min_rx_seconds and post_write_script require split_on_transmission\n";
+                    error();
+                }
+            }
 
             channel->outputs[oo].has_mp3_output = true;
 
@@ -159,6 +170,8 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
             fdata->append = (!outs[o].exists("append")) || (bool)(outs[o]["append"]);
             fdata->split_on_transmission = outs[o].exists("split_on_transmission") ? (bool)(outs[o]["split_on_transmission"]) : false;
             fdata->include_freq = outs[o].exists("include_freq") ? (bool)(outs[o]["include_freq"]) : false;
+            fdata->min_rx_seconds = 0.0;
+            fdata->post_write_script.clear();
             channel->needs_raw_iq = channel->has_iq_outputs = 1;
 
             if (fdata->continuous && fdata->split_on_transmission) {
@@ -228,6 +241,90 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 }
                 cerr << "missing dest_port\n";
                 error();
+            }
+        } else if (!strncmp(outs[o]["type"], "srt", 3)) {
+            channel->outputs[oo].data = XCALLOC(1, sizeof(struct srt_stream_data));
+            channel->outputs[oo].type = O_SRT;
+
+            srt_stream_data* sdata = (srt_stream_data*)channel->outputs[oo].data;
+
+            sdata->continuous = outs[o].exists("continuous") ? (bool)(outs[o]["continuous"]) : false;
+
+            if (outs[o].exists("listen_address")) {
+                sdata->listen_address = strdup(outs[o]["listen_address"]);
+            } else {
+                if (parsing_mixers) {
+                    cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: ";
+                } else {
+                    cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: ";
+                }
+                cerr << "missing listen_address\n";
+                error();
+            }
+
+            if (outs[o].exists("listen_port")) {
+                if (outs[o]["listen_port"].getType() == libconfig::Setting::TypeInt) {
+                    char buffer[12];
+                    sprintf(buffer, "%d", (int)outs[o]["listen_port"]);
+                    sdata->listen_port = strdup(buffer);
+                } else {
+                    sdata->listen_port = strdup(outs[o]["listen_port"]);
+                }
+            } else {
+                if (parsing_mixers) {
+                    cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: ";
+                } else {
+                    cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: ";
+                }
+                cerr << "missing listen_port\n";
+                error();
+            }
+
+            if (outs[o].exists("format")) {
+                const char* fmt = outs[o]["format"];
+                if (!strcmp(fmt, "mp3")) {
+                    sdata->format = SRT_STREAM_MP3;
+                    channel->outputs[oo].has_mp3_output = true;
+                } else if (!strcmp(fmt, "raw") || !strcmp(fmt, "pcm")) {
+                    sdata->format = SRT_STREAM_PCM;
+                } else if (!strcmp(fmt, "wav")) {
+                    sdata->format = SRT_STREAM_WAV;
+                } else {
+                    if (parsing_mixers) {
+                        cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: ";
+                    } else {
+                        cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: ";
+                    }
+                    cerr << "invalid SRT format, must be 'pcm', 'mp3' or 'wav'\n";
+                    error();
+                }
+            } else {
+                sdata->format = SRT_STREAM_PCM;
+            }
+
+            if (outs[o].exists("sample_rate")) {
+                sdata->sample_rate = (int)outs[o]["sample_rate"];
+            } else {
+                sdata->sample_rate = WAVE_RATE;
+            }
+
+            if (outs[o].exists("mode")) {
+                const char* m = outs[o]["mode"];
+                if (!strcmp(m, "live")) {
+                    sdata->srt_mode = SRT_MODE_LIVE;
+                } else if (!strcmp(m, "raw")) {
+                    sdata->srt_mode = SRT_MODE_RAW;
+                } else {
+                    if (parsing_mixers) {
+                        cerr << "Configuration error: mixers.[" << i << "] outputs.[" << o << "]: ";
+                    } else {
+                        cerr << "Configuration error: devices.[" << i << "] channels.[" << j << "] outputs.[" << o << "]: ";
+                    }
+                    cerr << "invalid SRT mode, must be 'live' or 'raw'\n";
+                    error();
+                }
+            } else {
+                sdata->srt_mode = SRT_MODE_LIVE;
             }
 #ifdef WITH_PULSEAUDIO
         } else if (!strncmp(outs[o]["type"], "pulse", 5)) {
