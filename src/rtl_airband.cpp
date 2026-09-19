@@ -84,9 +84,9 @@ bool multiple_demod_threads = false;
 bool multiple_output_threads = false;
 bool log_scan_activity = false;
 char* stats_filepath = NULL;
-double split_min_file_time = 1.0;
-double split_max_file_time = 60.0 * 60.0;
-double split_max_idle_time = 0.5;
+double global_split_min_file_time = 1.0;
+double global_split_max_file_time = 60.0 * 60.0;
+double global_split_max_idle_time = 0.5;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
 
@@ -727,6 +727,14 @@ static int count_devices_running() {
     return ret;
 }
 
+// read an optional top-level numeric setting, leaving *value at its default if absent
+static void parse_global_double(const Setting& root, const char* key, double* value) {
+    if (!setting_as_double_or(root, key, *value, value)) {
+        cerr << "Configuration error: " << key << " must be a number\n";
+        error();
+    }
+}
+
 int main(int argc, char* argv[]) {
 #ifdef WITH_PROFILING
     ProfilerStart("rtl_airband.prof");
@@ -850,26 +858,11 @@ int main(int argc, char* argv[]) {
             log_scan_activity = true;
         if (root.exists("stats_filepath"))
             stats_filepath = strdup(root["stats_filepath"]);
-        if (root.exists("split_min_file_time")) {
-            if (!setting_as_double(root["split_min_file_time"], &split_min_file_time)) {
-                cerr << "Configuration error: split_min_file_time must be a number\n";
-                error();
-            }
-        }
-        if (root.exists("split_max_file_time")) {
-            if (!setting_as_double(root["split_max_file_time"], &split_max_file_time)) {
-                cerr << "Configuration error: split_max_file_time must be a number\n";
-                error();
-            }
-        }
-        if (root.exists("split_max_idle_time")) {
-            if (!setting_as_double(root["split_max_idle_time"], &split_max_idle_time)) {
-                cerr << "Configuration error: split_max_idle_time must be a number\n";
-                error();
-            }
-        }
-        if (!valid_split_file_times(split_min_file_time, split_max_file_time, split_max_idle_time)) {
-            cerr << "Configuration error: invalid split file time settings (need split_min_file_time >= 1.0, split_max_file_time > split_min_file_time, split_max_idle_time > 0)\n";
+        parse_global_double(root, "split_min_file_time", &global_split_min_file_time);
+        parse_global_double(root, "split_max_file_time", &global_split_max_file_time);
+        parse_global_double(root, "split_max_idle_time", &global_split_max_idle_time);
+        if (!valid_split_file_times(global_split_min_file_time, global_split_max_file_time, global_split_max_idle_time)) {
+            cerr << "Configuration error: " << split_file_times_constraint << "\n";
             error();
         }
 #ifdef NFM

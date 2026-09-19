@@ -226,10 +226,11 @@ TEST_F(HelperFunctionsTest, setting_as_double_int) {
 TEST_F(HelperFunctionsTest, setting_as_double_float) {
     libconfig::Config config;
     libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeFloat);
-    s = 0.5f;
+    // 0.3 has no exact float representation, so this fails if the value is narrowed on the way out
+    s = 0.3;
     double value = 0.0;
     EXPECT_TRUE(setting_as_double(s, &value));
-    EXPECT_DOUBLE_EQ(value, 0.5);
+    EXPECT_DOUBLE_EQ(value, 0.3);
 }
 
 TEST_F(HelperFunctionsTest, setting_as_double_bool_rejected) {
@@ -246,4 +247,26 @@ TEST_F(HelperFunctionsTest, setting_as_double_string_rejected) {
     s = "5.0";
     double value = 0.0;
     EXPECT_FALSE(setting_as_double(s, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_absent_uses_fallback) {
+    libconfig::Config config;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
+    EXPECT_DOUBLE_EQ(value, 0.5);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_present_overrides_fallback) {
+    libconfig::Config config;
+    config.getRoot().add("split_max_file_time", libconfig::Setting::TypeInt) = 1800;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double_or(config.getRoot(), "split_max_file_time", 3600.0, &value));
+    EXPECT_DOUBLE_EQ(value, 1800.0);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_rejects_non_number) {
+    libconfig::Config config;
+    config.getRoot().add("split_max_idle_time", libconfig::Setting::TypeString) = "2.0";
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
 }

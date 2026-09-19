@@ -34,6 +34,8 @@ bool make_subdirs(const std::string& basedir, const std::string& subdirs);
 std::string make_dated_subdirs(const std::string& basedir, const struct tm* time);
 bool should_close_split_file(double duration_sec, double idle_sec, double split_min_file_time, double split_max_file_time, double split_max_idle_time);
 bool valid_split_file_times(double split_min_file_time, double split_max_file_time, double split_max_idle_time);
+extern const char* const split_file_times_constraint;
 bool setting_as_double(const libconfig::Setting& setting, double* value);
+bool setting_as_double_or(const libconfig::Setting& parent, const char* key, double fallback, double* value);
 
 #endif /* _HELPER_FUNCTIONS_H */
