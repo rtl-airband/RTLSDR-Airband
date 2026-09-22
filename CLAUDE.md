@@ -110,7 +110,7 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 
 ## CI and Pull Request Checks
 
-Four workflows run on pull requests (`.github/workflows/`); the container build also runs on merges to `main`, tags, and a daily schedule:
+Four workflows run checks on open pull requests (`.github/workflows/`); the container build also runs on merges to `main`, tags, and a daily schedule. A fifth, `version_bump.yml`, runs after a PR is merged — see [Version Tagging](#version-tagging).
 
 **`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
 
@@ -128,6 +128,33 @@ Then runs `unittests` for all four, installs the Release+NFM build, and smoke-te
 **`build_docker_containers.yml`** — builds the multi-arch container image (`linux/amd64`, `386`, `arm64`, `arm/v6`, `arm/v7`), one job per platform via QEMU. Every image is smoke-tested (`rtl_airband -v`) under its target platform. On push/tag/schedule/`workflow_dispatch` the images are pushed by digest to GitHub Container Registry and the `merge` job combines the per-arch digests into a single manifest. Pull requests only build and smoke-test locally (`--load`); a fork PR gets a read-only `GITHUB_TOKEN`, so the registry push is denied. The `Prepare` step's `push` output gates this.
 
 **Before submitting a PR**, the pre-commit hooks cover most checks automatically. For build system or config changes not touching `src/`, verify all four cmake configurations build cleanly by hand.
+
+## Version Tagging
+
+`version_bump.yml` runs when a PR is **merged into `main`** and tags the merge commit with [`anothrNick/github-tag-action@1.64.0`](https://github.com/anothrNick/github-tag-action). Configured with `WITH_V: true` (tags look like `v5.3.0`) and `DEFAULT_BUMP: patch`.
+
+The action scans the **full commit message body of every commit between the previous tag and the merge commit** (`git log "$tag_commit".."$commit" --format=%B`) for a bump keyword, so the keyword can live in any commit in the PR — it does not have to be in the merge commit. "Previous tag" means the highest semver tag, not the most recent one by date:
+
+| Keyword in a commit message | Result |
+|------|--------|
+| `#major` | `v5.3.0` → `v6.0.0` |
+| `#minor` | `v5.3.0` → `v5.4.0` |
+| `#patch` | `v5.3.0` → `v5.3.1` |
+| `#none` | no tag is created |
+| none of the above | `DEFAULT_BUMP: patch` applies → `v5.3.1` |
+
+Rules when writing commit messages:
+
+- **Every merged PR creates a tag** unless a commit says `#none`. With `DEFAULT_BUMP: patch`, doing nothing still bumps the patch version, so add a keyword only to ask for something other than a patch.
+- **Add `#minor` for a new user-facing feature or a new config option.** Add `#major` for a breaking change — a removed or renamed config key, or changed default behavior.
+- **Highest keyword wins**, checked in the order `#major` → `#minor` → `#patch` → `#none`. One `#major` anywhere in the PR's commits bumps major even if other commits say `#minor`.
+- **Matching is a plain substring search over the whole message**, body included. Never write these tokens in prose (for example "fixed a #minor issue") — it will bump the version. Refer to them as "the #minor keyword" only outside commit messages.
+- **`#minor` and `#major` also publish a GitHub Release** with generated notes; `#patch` and the default bump only create the tag (`if: steps.tag.outputs.part != 'patch'`).
+- Squash-merging collapses the PR's commits into one message, so make sure the keyword survives into the squash message.
+
+After tagging, the workflow re-runs `ci_build.yml`, `platform_build.yml`, and `build_docker_containers.yml` against the new tag (a tag pushed with `GITHUB_TOKEN` does not fire their own `tags: ['v*']` triggers, so they have to be dispatched explicitly).
+
+Note that those three dispatch steps are unguarded: on a `#none` merge the action leaves `new_tag` at the **existing** tag, so they re-run against the previous release and republish its container images.
 
 ## System Tests
 
@@ -188,7 +215,7 @@ Each device operates in one of two modes, set via `mode = "multichannel"` (defau
 
 **`R_MULTICHANNEL`** — The SDR is tuned to a fixed center frequency and multiple channels are demodulated simultaneously from the same wideband capture. Each channel has a single `freq` value that must fall within the SDR's bandwidth. This is the common case for monitoring several frequencies at once.
 
-**`R_SCAN`** — The device has exactly one channel, but that channel holds a `freqs` list of frequencies to cycle through. A controller thread monitors the squelch: after ~2 seconds of no signal (10 × 200 ms polls), it retunes the SDR hardware to the next frequency via `input_set_centerfreq()`. When a signal is detected, it stays on the current frequency. Per-frequency labels, squelch thresholds, modulation, notch filters, and CTCSS settings are all supported in the `freqs` list. (`rtl_airband.cpp:101-140`, `config.cpp:825`)
+**`R_SCAN`** — The device has exactly one channel, but that channel holds a `freqs` list of frequencies to cycle through. A controller thread monitors the squelch: after ~2 seconds of no signal (10 × 200 ms polls), it retunes the SDR hardware to the next frequency via `input_set_centerfreq()`. When a signal is detected, it stays on the current frequency. Per-frequency settings (labels, `squelch_threshold`/`squelch_snr_threshold`, `modulations`, `notch`/`notch_q`, `ctcss`, `bandwidth`, `ampfactor`) are **parallel lists** to `freqs` (same index = same frequency), not a list of objects — `freqs` is parsed as numbers. Only one channel per device in scan mode. (`rtl_airband.cpp:101-140`, `config.cpp:312-729`)
 
 ### Threading Model
 
@@ -206,8 +233,10 @@ Config files use libconfig++ syntax. Sample configs in `config/`. Top-level sect
 devices: ( { type = "rtlsdr"; centerfreq = 120.0; gain = 25;
              channels: ( { freq = 119.5; modulation = "AM";
                            outputs: ( { type = "icecast"; ... } ); } ); } );
-mixers: ( { name = "mix1"; inputs: ( { device=0; channel=0; ampfactor=1.0; } ); outputs: (...); } );
+mixers: { mix1: { outputs: ( { type = "icecast"; ... } ); } };
 ```
+
+Mixers have **no `inputs` section** — a channel connects to a mixer implicitly via an output `type = "mixer"` + `name` (+ optional `ampfactor`, `balance`), see `mixer_connect_input` (`src/config.cpp:168-193`, `src/mixer.cpp:57`).
 
 Output types: `icecast`, `file`, `rawfile`, `udp_stream`, `mixer`, `pulse`.
 

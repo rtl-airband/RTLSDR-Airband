@@ -140,6 +140,19 @@ def validate_mp3_range(
     return matches[0]
 
 
+def count_mp3_files(mp3_dir: Path, filename_template: str) -> int:
+    """
+    Count the non-empty MP3 files written for this template.
+
+    split_on_transmission outputs produce one file per transmission, so the count
+    is what distinguishes a file that stayed open across a gap from one that split.
+    """
+    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    for mp3_file in matches:
+        assert mp3_file.stat().st_size > 0, f"MP3 file is empty: {mp3_file.name}"
+    return len(matches)
+
+
 def assert_mp3_present(mp3_dir: Path, filename_template: str) -> None:
     """
     Assert that at least one non-empty MP3 file exists for this template.
@@ -149,12 +162,9 @@ def assert_mp3_present(mp3_dir: Path, filename_template: str) -> None:
     Raises:
         AssertionError: If no matching file is found or all matching files are empty.
     """
-    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
-    assert (
-        matches
+    assert count_mp3_files(
+        mp3_dir, filename_template
     ), f"No .mp3 output file found matching '{filename_template}_[0-9]*.mp3' in {mp3_dir}"
-    for mp3_file in matches:
-        assert mp3_file.stat().st_size > 0, f"MP3 file is empty: {mp3_file.name}"
 
 
 def assert_mp3_silent(mp3_dir: Path, filename_template: str) -> None:

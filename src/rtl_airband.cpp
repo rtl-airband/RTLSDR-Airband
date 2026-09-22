@@ -59,6 +59,7 @@
 #include <ctime>
 #include <iostream>
 #include <libconfig.h++>
+#include "helper_functions.h"
 #include "input-common.h"
 #include "logging.h"
 #include "rtl_airband.h"
@@ -83,6 +84,9 @@ bool multiple_demod_threads = false;
 bool multiple_output_threads = false;
 bool log_scan_activity = false;
 char* stats_filepath = NULL;
+double global_split_min_file_time = 1.0;
+double global_split_max_file_time = 60.0 * 60.0;
+double global_split_max_idle_time = 0.5;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
 
@@ -723,6 +727,14 @@ static int count_devices_running() {
     return ret;
 }
 
+// read an optional top-level numeric setting, leaving *value at its default if absent
+static void parse_global_double(const Setting& root, const char* key, double* value) {
+    if (!setting_as_double_or(root, key, *value, value)) {
+        cerr << "Configuration error: " << key << " must be a number\n";
+        error();
+    }
+}
+
 int main(int argc, char* argv[]) {
 #ifdef WITH_PROFILING
     ProfilerStart("rtl_airband.prof");
@@ -846,6 +858,13 @@ int main(int argc, char* argv[]) {
             log_scan_activity = true;
         if (root.exists("stats_filepath"))
             stats_filepath = strdup(root["stats_filepath"]);
+        parse_global_double(root, "split_min_file_time", &global_split_min_file_time);
+        parse_global_double(root, "split_max_file_time", &global_split_max_file_time);
+        parse_global_double(root, "split_max_idle_time", &global_split_max_idle_time);
+        if (!valid_split_file_times(global_split_min_file_time, global_split_max_file_time, global_split_max_idle_time)) {
+            cerr << "Configuration error: " << split_file_times_constraint << "\n";
+            error();
+        }
 #ifdef NFM
         if (root.exists("tau"))
             alpha = ((int)root["tau"] == 0 ? 0.0f : exp(-1.0f / (WAVE_RATE * 1e-6 * (int)root["tau"])));

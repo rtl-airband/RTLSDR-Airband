@@ -7,6 +7,62 @@ Generates minimal libconfig++-format .conf files for the rtl_airband binary.
 from pathlib import Path
 
 
+def _output_lines(ch: dict, mp3_tmp_dir: Path | None) -> list[str]:
+    """
+    Render the outputs: ( ... ); block for one channel.
+
+    File outputs use directory+template+append, mixer outputs use name+balance.
+    Entries from the channel's split_outputs additionally enable
+    split_on_transmission and carry any per-output split file time overrides.
+    """
+    entries: list[dict] = []
+    if mp3_tmp_dir is not None:
+        entries.append(
+            {
+                "type": "file",
+                "directory": str(mp3_tmp_dir),
+                "template": ch["output_filename_template"],
+            }
+        )
+    if ch.get("mixer_output") is not None:
+        entries.append(
+            {
+                "type": "mixer",
+                "name": ch["mixer_output"]["name"],
+                "balance": ch["mixer_output"]["balance"],
+            }
+        )
+    for split_out in ch.get("split_outputs") or []:
+        entries.append(
+            {
+                "type": "file",
+                "directory": split_out["directory"],
+                "template": split_out["template"],
+                "overrides": split_out.get("overrides", {}),
+            }
+        )
+
+    lines = ["      outputs: ("]
+    for j, entry in enumerate(entries):
+        is_last = j == len(entries) - 1
+        lines.append("        {")
+        lines.append(f'          type = "{entry["type"]}";')
+        if entry["type"] == "mixer":
+            lines.append(f'          name = "{entry["name"]}";')
+            lines.append(f'          balance = {entry["balance"]:.1f};')
+        else:
+            lines.append(f'          directory = "{entry["directory"]}";')
+            lines.append(f'          filename_template = "{entry["template"]}";')
+            lines.append("          append = false;")
+            if "overrides" in entry:
+                lines.append("          split_on_transmission = true;")
+                for key, value in entry["overrides"].items():
+                    lines.append(f"          {key} = {value};")
+        lines.append("        }" + ("" if is_last else ","))
+    lines.append("      );")
+    return lines
+
+
 def write_config(
     config_path: Path,
     iq_filepath: Path,
@@ -20,6 +76,7 @@ def write_config(
     mixers: list[dict] | None = None,
     mp3_tmp_dir: Path | None = None,
     stats_filepath: Path | None = None,
+    split_times: dict | None = None,
 ) -> None:
     """
     Write a minimal libconfig++-format .conf file for rtl_airband.
@@ -40,6 +97,10 @@ def write_config(
               (used only when mp3_tmp_dir is provided).
             - mixer_output (dict|None): {"name": str, "balance": float}, omitted if None.
             - scan_freqs_hz (list[int]): Scan mode only — list of frequencies in Hz.
+            - split_outputs (list[dict]|None): Extra "file" outputs with
+              split_on_transmission enabled, each {"directory": str, "template": str,
+              "overrides": dict}, where overrides maps split file time config keys
+              to per-output values.
         output_dir: Directory where mixer MP3 outputs are written. Unused when
             mixers is empty/None.
         speedup_factor: IQ replay speed factor (1.0 = real-time).
@@ -56,10 +117,16 @@ def write_config(
             to find and validate the resulting file.
         stats_filepath: If provided, rtl_airband writes a Prometheus-format stats
             file to this path on shutdown.
+        split_times: If provided, top-level split file time settings written as
+            global config keys (split_min_file_time / split_max_file_time /
+            split_max_idle_time).
     """
     lines = []
     if fft_size is not None:
         lines.append(f"fft_size = {fft_size};")
+
+    for key, value in (split_times or {}).items():
+        lines.append(f"{key} = {value};")
 
     if mixers:
         lines.append("mixers:")
@@ -119,40 +186,7 @@ def write_config(
         if ch.get("squelch") is not None:
             lines.append(f"      squelch_snr_threshold = {ch['squelch']:.1f};")
 
-        # Build output entries: file outputs use directory+template+append,
-        # mixer outputs use name+balance.
-        output_entries: list[dict] = []
-        if mp3_tmp_dir is not None:
-            output_entries.append(
-                {
-                    "type": "file",
-                    "directory": str(mp3_tmp_dir),
-                    "template": ch["output_filename_template"],
-                }
-            )
-        if ch.get("mixer_output") is not None:
-            output_entries.append(
-                {
-                    "type": "mixer",
-                    "name": ch["mixer_output"]["name"],
-                    "balance": ch["mixer_output"]["balance"],
-                }
-            )
-
-        lines.append("      outputs: (")
-        for j, entry in enumerate(output_entries):
-            is_last_out = j == len(output_entries) - 1
-            lines.append("        {")
-            lines.append(f'          type = "{entry["type"]}";')
-            if entry["type"] == "mixer":
-                lines.append(f'          name = "{entry["name"]}";')
-                lines.append(f'          balance = {entry["balance"]:.1f};')
-            else:
-                lines.append(f'          directory = "{entry["directory"]}";')
-                lines.append(f'          filename_template = "{entry["template"]}";')
-                lines.append("          append = false;")
-            lines.append("        }" + ("" if is_last_out else ","))
-        lines.append("      );")
+        lines.extend(_output_lines(ch, mp3_tmp_dir))
 
         lines.append("    }" + ("" if is_last else ","))
 

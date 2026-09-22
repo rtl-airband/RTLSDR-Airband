@@ -19,6 +19,8 @@
 
 #include "test_base_class.h"
 
+#include <libconfig.h++>
+
 #include "helper_functions.h"
 
 using namespace std;
@@ -164,4 +166,107 @@ TEST_F(HelperFunctionsTest, make_dated_subdirs_some_exist) {
     strptime("2010-3-8", "%Y-%m-%d", &time_struct);
     EXPECT_EQ(make_dated_subdirs(temp_dir, &time_struct), dir_through_month + "08");
     EXPECT_TRUE(dir_exists(dir_through_month + "08"));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_duration) {
+    EXPECT_TRUE(should_close_split_file(6001.0, 0.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_duration_at_max) {
+    EXPECT_FALSE(should_close_split_file(6000.0, 0.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_after_min_duration) {
+    EXPECT_TRUE(should_close_split_file(10.0, 0.6, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_at_max) {
+    EXPECT_FALSE(should_close_split_file(10.0, 0.5, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_before_min_duration) {
+    EXPECT_FALSE(should_close_split_file(0.5, 10.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_duration_at_min) {
+    EXPECT_FALSE(should_close_split_file(1.0, 10.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_no_idle) {
+    EXPECT_FALSE(should_close_split_file(10.0, 0.1, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_ok) {
+    EXPECT_TRUE(valid_split_file_times(1.0, 60.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_min_too_small) {
+    EXPECT_FALSE(valid_split_file_times(0.5, 60.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_max_not_greater) {
+    EXPECT_FALSE(valid_split_file_times(60.0, 60.0, 0.5));
+    EXPECT_FALSE(valid_split_file_times(60.0, 30.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_idle_not_positive) {
+    EXPECT_FALSE(valid_split_file_times(1.0, 60.0, 0.0));
+    EXPECT_FALSE(valid_split_file_times(1.0, 60.0, -1.0));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_int) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeInt);
+    s = 5;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double(s, &value));
+    EXPECT_DOUBLE_EQ(value, 5.0);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_float) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeFloat);
+    // 0.3 has no exact float representation, so this fails if the value is narrowed on the way out
+    s = 0.3;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double(s, &value));
+    EXPECT_DOUBLE_EQ(value, 0.3);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_bool_rejected) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeBoolean);
+    s = true;
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double(s, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_string_rejected) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeString);
+    s = "5.0";
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double(s, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_absent_uses_fallback) {
+    libconfig::Config config;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
+    EXPECT_DOUBLE_EQ(value, 0.5);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_present_overrides_fallback) {
+    libconfig::Config config;
+    config.getRoot().add("split_max_file_time", libconfig::Setting::TypeInt) = 1800;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double_or(config.getRoot(), "split_max_file_time", 3600.0, &value));
+    EXPECT_DOUBLE_EQ(value, 1800.0);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_rejects_non_number) {
+    libconfig::Config config;
+    config.getRoot().add("split_max_idle_time", libconfig::Setting::TypeString) = "2.0";
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
 }

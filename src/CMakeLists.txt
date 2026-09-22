@@ -371,9 +371,10 @@ if(BUILD_UNITTESTS)
 		${rtl_airband_extra_libs}
 	)
 
-	# add include for config.h
+	# add include for config.h and libconfig++ (needed by helper_functions.cpp)
 	target_include_directories (unittests PUBLIC
 		${CMAKE_CURRENT_BINARY_DIR}
+		${CONFIG_INCLUDE_DIRS}
 	)
 
 	include(GoogleTest)
