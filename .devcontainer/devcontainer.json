@@ -22,8 +22,12 @@
 	"containerEnv": {
 		"SHELL": "/bin/bash"
 	},
+	"initializeCommand": "mkdir -p \"${localWorkspaceFolder}/../RTLSDR-Airband_test_cases\"",
 	"postCreateCommand": "pre-commit install",
 	"postStartCommand": "cd ${containerWorkspaceFolder}/system_tests && uv sync",
+	"mounts": [
+		"source=${localWorkspaceFolder}/../RTLSDR-Airband_test_cases,target=${containerWorkspaceFolder}/system_tests/test_cases,type=bind,readonly"
+	],
 	"runArgs": [
 		"--cap-add=SYS_PTRACE",
 		"--security-opt",

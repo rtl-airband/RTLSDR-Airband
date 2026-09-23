@@ -16,6 +16,7 @@ builds/
 system_tests/.generated_input
 system_tests/user_provided/
 system_tests/test_output/
+system_tests/test_cases/
 
 # Claude Code - personal overrides
 .claude/settings.local.json
