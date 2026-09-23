@@ -1,4 +1,4 @@
-FROM ubuntu:latest
+FROM ubuntu:24.04
 
 RUN sed -i 's/^# \(.*export LS_OPTIONS.*$\)/\1/g' ~/.bashrc && \
     sed -i 's/^# \(.*alias ll.*$\)/\1/g' ~/.bashrc
