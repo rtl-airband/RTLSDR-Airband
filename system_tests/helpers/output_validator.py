@@ -10,12 +10,18 @@ files are found via glob. Each test writes to its own test_output/<name>/
 subdirectory, so filenames are unique within a run.
 """
 
+import re
 from pathlib import Path
 
 from mutagen.mp3 import MP3
 
 # rtl_airband hardcodes MP3_RATE = 8000 Hz for all MP3 output
 _MP3_SAMPLE_RATE = 8000
+
+
+def _template_mp3s(mp3_dir: Path, filename_template: str) -> list[Path]:
+    """The MP3 files written for this template, in name order."""
+    return sorted(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
 
 
 def validate_mp3(
@@ -48,7 +54,7 @@ def validate_mp3(
         AssertionError: If no file is found, duration is out of range, or audio
                         properties (sample rate, bitrate) are invalid.
     """
-    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    matches = _template_mp3s(mp3_dir, filename_template)
     assert (
         matches
     ), f"No .mp3 output file found matching '{filename_template}_[0-9]*.mp3' in {mp3_dir}"
@@ -105,7 +111,7 @@ def validate_mp3_range(
     Sample-rate and bitrate checks match validate_mp3(); only the duration
     assertion differs.
     """
-    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    matches = _template_mp3s(mp3_dir, filename_template)
     assert (
         matches
     ), f"No .mp3 output file found matching '{filename_template}_[0-9]*.mp3' in {mp3_dir}"
@@ -147,7 +153,7 @@ def count_mp3_files(mp3_dir: Path, filename_template: str) -> int:
     split_on_transmission outputs produce one file per transmission, so the count
     is what distinguishes a file that stayed open across a gap from one that split.
     """
-    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    matches = _template_mp3s(mp3_dir, filename_template)
     for mp3_file in matches:
         assert mp3_file.stat().st_size > 0, f"MP3 file is empty: {mp3_file.name}"
     return len(matches)
@@ -182,7 +188,7 @@ def assert_mp3_silent(mp3_dir: Path, filename_template: str) -> None:
     Raises:
         AssertionError: If a non-empty MP3 file is found.
     """
-    matches = list(mp3_dir.glob(f"{filename_template}_[0-9]*.mp3"))
+    matches = _template_mp3s(mp3_dir, filename_template)
     if not matches:
         return  # No file created — correct for squelch-closed
 
@@ -191,3 +197,37 @@ def assert_mp3_silent(mp3_dir: Path, filename_template: str) -> None:
             f"Expected no MP3 output (squelch/CTCSS gate closed), but "
             f"{mp3_file.name} contains {mp3_file.stat().st_size} bytes"
         )
+
+
+def split_file_names(
+    mp3_dir: Path, filename_template: str, freq_hz: int | None = None
+) -> tuple[list[str], dict[str, list[str]]]:
+    """
+    Sort a template's MP3 files by split_include_transmission_start naming.
+
+    Returns (standalone stamps, {transmission start stamp: part start stamps in
+    file-name order}). Any other name for the template fails the assertion. Pass
+    freq_hz for an include_freq output; every name must then end with it.
+    """
+    stamp = r"(\d{8}_\d{6})"
+    freq = f"_{freq_hz}" if freq_hz is not None else ""
+    pattern = re.compile(
+        rf"{re.escape(filename_template)}_{stamp}(?:_{stamp})?{freq}\.mp3"
+    )
+    standalone: list[str] = []
+    parts: dict[str, list[str]] = {}
+    for mp3_file in _template_mp3s(mp3_dir, filename_template):
+        match = pattern.fullmatch(mp3_file.name)
+        assert match, f"Unexpected file name for '{filename_template}': {mp3_file.name}"
+        assert mp3_file.stat().st_size > 0, f"MP3 file is empty: {mp3_file.name}"
+        transmission_stamp, part_stamp = match.groups()
+        if part_stamp is None:
+            standalone.append(transmission_stamp)
+        else:
+            parts.setdefault(transmission_stamp, []).append(part_stamp)
+    return standalone, parts
+
+
+def total_mp3_duration_s(mp3_dir: Path, filename_template: str) -> float:
+    """Sum the audio duration of every MP3 file written for this template."""
+    return sum(MP3(f).info.length for f in _template_mp3s(mp3_dir, filename_template))

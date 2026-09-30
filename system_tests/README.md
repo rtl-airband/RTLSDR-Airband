@@ -111,6 +111,7 @@ This keeps all fixture and output I/O off the SD card. The `ubuntu-22.04-arm` ru
 | `test_multichannel.py` | Two simultaneous AM channels each produce independent audio |
 | `test_nfm.py` | NFM demodulation produces correct-duration audio (NFM binary only) |
 | `test_scan.py` | Scan mode stitches audio from two frequencies with a noise gap in between |
+| `test_split_on_transmission.py` | Per-output split file time overrides; `split_include_transmission_start` names the parts of a split transmission under its start (including from the global setting), and its config validation |
 | `test_user_provided.py` | Dynamically generated tests from JSON files in `user_provided/` |
 
 ## Adding User-Defined Tests

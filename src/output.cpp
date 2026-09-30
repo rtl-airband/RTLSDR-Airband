@@ -52,6 +52,14 @@
 #include "input-common.h"
 #include "rtl_airband.h"
 
+static void file_time(const time_t* t, struct tm* time) {
+    if (use_localtime) {
+        localtime_r(t, time);
+    } else {
+        gmtime_r(t, time);
+    }
+}
+
 void shout_setup(icecast_data* icecast, mix_modes mixmode) {
     int ret;
     shout_t* shouttemp = shout_new();
@@ -242,6 +250,66 @@ int rename_if_exists(char const* oldpath, char const* newpath) {
     return ret;
 }
 
+static std::string build_output_filename(const file_data* fdata, bool include_tx_time) {
+    // timestamp format includes minutes and seconds if splitting on transmission
+    const char* timestamp_format = fdata->split_on_transmission ? "_%Y%m%d_%H%M%S" : "_%Y%m%d_%H";
+
+    struct tm open_time;
+    file_time(&fdata->file_open_time.tv_sec, &open_time);
+    struct tm transmission_time;
+    file_time(&fdata->transmission_start_time.tv_sec, &transmission_time);
+
+    // build timestamp strings for open time
+    char open_timestamp[32];
+    if (strftime(open_timestamp, sizeof(open_timestamp), timestamp_format, &open_time) == 0) {
+        log(LOG_NOTICE, "strftime returned 0\n");
+        return "";
+    }
+
+    // make sure the output directory exists
+    std::string output_dir;
+    if (fdata->dated_subdirectories) {
+        // if using tx time then directory is named for transmission_time, otherwise open_time
+        const struct tm* directory_time = include_tx_time ? &transmission_time : &open_time;
+        output_dir = make_dated_subdirs(fdata->basedir, directory_time);
+
+        if (output_dir.empty()) {
+            log(LOG_ERR, "Failed to create dated subdirectory\n");
+            return "";
+        }
+    } else {
+        output_dir = fdata->basedir;
+        make_dir(output_dir);
+    }
+
+    // use a string stream to build the output filepath
+    std::stringstream ss;
+    ss << output_dir << '/' << fdata->basename;
+
+    // add transmission start first (if asked)
+    if (include_tx_time) {
+        char transmission_timestamp[32];
+        if (strftime(transmission_timestamp, sizeof(transmission_timestamp), timestamp_format, &transmission_time) == 0) {
+            log(LOG_NOTICE, "strftime returned 0\n");
+            return "";
+        }
+
+        ss << transmission_timestamp;
+    }
+
+    // then open time (always)
+    ss << open_timestamp;
+
+    // then frequency (if valid)
+    if (fdata->frequency > 0) {
+        ss << '_' << fdata->frequency;
+    }
+
+    // finally suffix and return
+    ss << fdata->suffix;
+    return ss.str();
+}
+
 /*
  * Open output file (mp3 or raw IQ) for append or initial write.
  * If appending to an audio file, insert discontinuity indictor tones
@@ -363,44 +431,66 @@ static void close_file(output_t* output) {
  *   If current duration too long, or we've been idle too long
  * else (append or continuous) check:
  *   if hour is different.
+ * reopening: the caller will open a new file right away if this one is closed
+ *   (ie there is a signal present).
+ * Returns true if the file closed due to should_close_split_file_max_time,
+ *   so the next file may continue the same transmission.
  */
-static void close_if_necessary(output_t* output) {
+static bool close_if_necessary(output_t* output, bool reopening) {
     file_data* fdata = (file_data*)(output->data);
 
     if (!fdata || !fdata->f) {
-        return;
+        return false;
     }
 
     timeval current_time;
     gettimeofday(&current_time, NULL);
 
     if (fdata->split_on_transmission) {
-        double duration_sec = delta_sec(&fdata->open_time, &current_time);
+        bool closed_due_to_max_time = false;
+        double duration_sec = delta_sec(&fdata->file_open_time, &current_time);
         double idle_sec = delta_sec(&fdata->last_write_time, &current_time);
 
+        // check if the split should be closed
         if (should_close_split_file(duration_sec, idle_sec, fdata->split_min_file_time, fdata->split_max_file_time, fdata->split_max_idle_time)) {
+            // check if the reason to close is max time and only max time
+            if (should_close_split_file_max_time(duration_sec, fdata->split_max_file_time) &&
+                !should_close_split_file_idle(duration_sec, idle_sec, fdata->split_min_file_time, fdata->split_max_idle_time)) {
+                closed_due_to_max_time = true;
+
+                // if is the first split (file open time and transmission start time are the same),
+                // AND filenames include transmission start times, AND the caller intends to open a
+                // new file if this one is closed, then perform a first split rename
+                if (timercmp(&fdata->file_open_time, &fdata->transmission_start_time, ==) && fdata->split_include_transmission_start && reopening) {
+                    std::string new_filepath = build_output_filename(fdata, true);
+                    if (new_filepath.empty()) {
+                        log(LOG_NOTICE, "failed to generate an output filename for a first split rename\n");
+                    } else {
+                        debug_print("changing output file name from %s to %s\n", fdata->file_path.c_str(), new_filepath.c_str());
+                        fdata->file_path = new_filepath;
+                    }
+                }
+            }
+
             debug_print("closing file %s, duration %f sec, idle %f sec\n", fdata->file_path.c_str(), duration_sec, idle_sec);
             close_file(output);
         }
-        return;
+        return closed_due_to_max_time;
     }
 
     // Check if the hour boundary was just crossed.  NOTE: Actual hour number doesn't matter but still
     // need to use localtime if enabled (some timezones have partial hour offsets)
-    int start_hour;
-    int current_hour;
-    if (use_localtime) {
-        start_hour = localtime(&(fdata->open_time.tv_sec))->tm_hour;
-        current_hour = localtime(&current_time.tv_sec)->tm_hour;
-    } else {
-        start_hour = gmtime(&(fdata->open_time.tv_sec))->tm_hour;
-        current_hour = gmtime(&current_time.tv_sec)->tm_hour;
-    }
+    struct tm tmp_tm;
+    file_time(&(fdata->file_open_time.tv_sec), &tmp_tm);
+    int start_hour = tmp_tm.tm_hour;
+    file_time(&(current_time.tv_sec), &tmp_tm);
+    int current_hour = tmp_tm.tm_hour;
 
     if (start_hour != current_hour) {
         debug_print("closing file %s after crossing hour boundary\n", fdata->file_path.c_str());
         close_file(output);
     }
+    return false;
 }
 
 /*
@@ -417,52 +507,49 @@ static bool output_file_ready(channel_t* channel, output_t* output) {
         return false;
     }
 
-    close_if_necessary(output);
+    // check if an open file needs to be closed, and if it is, if it was a split transmission closed due to max time
+    bool closed_due_to_max_time = close_if_necessary(output, true);
 
-    if (fdata->f) {  // still open
+    // if the output file is still open, nothing else to do
+    if (fdata->f) {
         return true;
     }
 
+    // otherwise, opening a new output file . . .
+
+    // start by getting current time
     timeval current_time;
     gettimeofday(&current_time, NULL);
-    struct tm* time;
-    if (use_localtime) {
-        time = localtime(&current_time.tv_sec);
-    } else {
-        time = gmtime(&current_time.tv_sec);
+
+    // set the transmission_start_time ONLY if not continuing a transmission
+    if (!closed_due_to_max_time) {
+        fdata->transmission_start_time = current_time;
     }
 
-    char timestamp[32];
-    if (strftime(timestamp, sizeof(timestamp), fdata->split_on_transmission ? "_%Y%m%d_%H%M%S" : "_%Y%m%d_%H", time) == 0) {
-        log(LOG_NOTICE, "strftime returned 0\n");
+    // always set open time and last write time to now
+    fdata->file_open_time = current_time;
+    fdata->last_write_time = current_time;
+
+    // if including frequency then set, otherwise use 0 so it's not included
+    // in the output filename
+    fdata->frequency = fdata->include_freq ? channel->freqlist[channel->freq_idx].frequency : 0;
+
+    // build the output filename and temp name.  at this point (opening a new file)
+    // we can know if this is a 2nd or later split of a transmission but can't know if
+    // this is the 1st file of a transmission that will later be split (eg part 1 will be
+    // renamed in close_if_necessary when its transmission continues)
+    bool include_tx_time = fdata->split_include_transmission_start && closed_due_to_max_time;
+
+    // build output filename and a tmp version
+    std::string output_filename = build_output_filename(fdata, include_tx_time);
+    if (output_filename.empty()) {
+        log(LOG_NOTICE, "failed to generate an output filename\n");
         return false;
     }
-
-    std::string output_dir;
-    if (fdata->dated_subdirectories) {
-        output_dir = make_dated_subdirs(fdata->basedir, time);
-        if (output_dir.empty()) {
-            log(LOG_ERR, "Failed to create dated subdirectory\n");
-            return false;
-        }
-    } else {
-        output_dir = fdata->basedir;
-        make_dir(output_dir);
-    }
-
-    // use a string stream to build the output filepath
-    std::stringstream ss;
-    ss << output_dir << '/' << fdata->basename << timestamp;
-    if (fdata->include_freq) {
-        ss << '_' << channel->freqlist[channel->freq_idx].frequency;
-    }
-    ss << fdata->suffix;
-    fdata->file_path = ss.str();
-
+    fdata->file_path = output_filename;
     fdata->file_path_tmp = fdata->file_path + ".tmp";
 
-    fdata->open_time = fdata->last_write_time = current_time;
-
+    // open the (temp) file
     const int is_audio = output->type == O_RAWFILE ? 0 : 1;
     if (open_file(fdata, channel->mode, is_audio) < 0) {
         log(LOG_WARNING, "Cannot open output file %s (%s)\n", fdata->file_path_tmp.c_str(), strerror(errno));
@@ -526,7 +613,7 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
             file_data* fdata = (file_data*)(channel->outputs[k].data);
 
             if (fdata->continuous == false && channel->axcindicate == NO_SIGNAL && channel->outputs[k].active == false) {
-                close_if_necessary(&channel->outputs[k]);
+                close_if_necessary(&channel->outputs[k], false);
                 continue;
             }
 

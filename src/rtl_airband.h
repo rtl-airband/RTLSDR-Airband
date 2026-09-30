@@ -130,23 +130,29 @@ struct icecast_data {
 };
 
 struct file_data {
+    // set once by config
+    enum output_type type;
     std::string basedir;
     std::string basename;
-    std::string suffix;
-    std::string file_path;
-    std::string file_path_tmp;
     bool dated_subdirectories;
+    std::string suffix;
     bool continuous;
     bool append;
     bool split_on_transmission;
+    bool include_freq;
     double split_min_file_time;
     double split_max_file_time;
     double split_max_idle_time;
-    bool include_freq;
-    timeval open_time;
+    bool split_include_transmission_start;
+
+    // set per output file
+    timeval transmission_start_time;
+    timeval file_open_time;
     timeval last_write_time;
+    int frequency;
+    std::string file_path;
+    std::string file_path_tmp;
     FILE* f;
-    enum output_type type;
 };
 
 struct udp_stream_data {
@@ -365,6 +371,7 @@ extern char* stats_filepath;
 extern double global_split_min_file_time;
 extern double global_split_max_file_time;
 extern double global_split_max_idle_time;
+extern bool global_split_include_transmission_start;
 extern size_t fft_size, fft_size_log;
 extern int device_count, mixer_count;
 extern int shout_metadata_delay;
