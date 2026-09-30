@@ -87,7 +87,13 @@ string make_dated_subdirs(const string& basedir, const struct tm* time) {
 }
 
 bool should_close_split_file(double duration_sec, double idle_sec, double split_min_file_time, double split_max_file_time, double split_max_idle_time) {
-    return (duration_sec > split_max_file_time) || (duration_sec > split_min_file_time && idle_sec > split_max_idle_time);
+    return should_close_split_file_max_time(duration_sec, split_max_file_time) || should_close_split_file_idle(duration_sec, idle_sec, split_min_file_time, split_max_idle_time);
+}
+bool should_close_split_file_max_time(double duration_sec, double split_max_file_time) {
+    return (duration_sec > split_max_file_time);
+}
+bool should_close_split_file_idle(double duration_sec, double idle_sec, double split_min_file_time, double split_max_idle_time) {
+    return (duration_sec > split_min_file_time && idle_sec > split_max_idle_time);
 }
 
 const char* const split_file_times_constraint = "invalid split file time settings (need split_min_file_time >= 1.0, split_max_file_time > split_min_file_time, split_max_idle_time > 0)";
@@ -120,4 +126,16 @@ bool setting_as_double_or(const libconfig::Setting& parent, const char* key, dou
         return true;
     }
     return setting_as_double(parent[key], value);
+}
+
+bool setting_as_bool_or(const libconfig::Setting& parent, const char* key, bool fallback, bool* value) {
+    *value = fallback;
+    if (!parent.exists(key)) {
+        return true;
+    }
+    if (parent[key].getType() != libconfig::Setting::TypeBoolean) {
+        return false;
+    }
+    *value = (bool)parent[key];
+    return true;
 }

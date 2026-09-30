@@ -43,22 +43,33 @@ static void output_error(int i, int j, int o, bool parsing_mixers, const string&
     error();
 }
 
-// resolve per-output split file time settings, falling back to the global values.
+// resolve per-output split file time and naming settings, falling back to the global values.
 // must be called after fdata->split_on_transmission is set
 static void parse_split_file_times(libconfig::Setting& out, file_data* fdata, int i, int j, int o, bool parsing_mixers) {
-    // the settings only take effect when the output splits per transmission
+    // the split_* time settings only take effect with split_on_transmission
     if (out.exists("split_min_file_time") || out.exists("split_max_file_time") || out.exists("split_max_idle_time")) {
         // mixers never split per transmission, log error and exit
         if (parsing_mixers) {
-            output_error(i, j, o, parsing_mixers, "split file time settings are not allowed for mixers");
+            output_error(i, j, o, parsing_mixers, "split_*_time settings are not allowed for mixers");
         }
 
         // if split_on_transmission is not set, log warnings but continue
         if (!fdata->split_on_transmission) {
-            log(LOG_WARNING, "Warning: devices.[%d] channels.[%d] outputs.[%d]: split file time settings are ignored without split_on_transmission\n", i, j, o);
+            log(LOG_WARNING, "Warning: devices.[%d] channels.[%d] outputs.[%d]: split_*_time settings are ignored without split_on_transmission\n", i, j, o);
         }
     }
 
+    // the split_* name settings only take effect with split_on_transmission
+    if (out.exists("split_include_transmission_start")) {
+        if (parsing_mixers) {
+            output_error(i, j, o, parsing_mixers, "split_include_transmission_start is not allowed for mixers");
+        }
+        if (!fdata->split_on_transmission) {
+            log(LOG_WARNING, "Warning: devices.[%d] channels.[%d] outputs.[%d]: split_include_transmission_start is ignored without split_on_transmission\n", i, j, o);
+        }
+    }
+
+    // parse out split_* time settings
     if (!setting_as_double_or(out, "split_min_file_time", global_split_min_file_time, &fdata->split_min_file_time)) {
         output_error(i, j, o, parsing_mixers, "split_min_file_time must be a number");
     }
@@ -69,9 +80,18 @@ static void parse_split_file_times(libconfig::Setting& out, file_data* fdata, in
         output_error(i, j, o, parsing_mixers, "split_max_idle_time must be a number");
     }
 
+    // validate split_* time settings
     if (!valid_split_file_times(fdata->split_min_file_time, fdata->split_max_file_time, fdata->split_max_idle_time)) {
         output_error(i, j, o, parsing_mixers, split_file_times_constraint);
     }
+
+    // parse out split_* name settings
+    if (!setting_as_bool_or(out, "split_include_transmission_start", global_split_include_transmission_start, &fdata->split_include_transmission_start)) {
+        output_error(i, j, o, parsing_mixers, "split_include_transmission_start must be a boolean");
+    }
+    // if split_on_transmission is false then split_include_transmission_start gets overridden to false. even a valid
+    // config can have global_split_include_transmission_start true but this file may not have split_on_transmission
+    fdata->split_include_transmission_start = fdata->split_include_transmission_start && fdata->split_on_transmission;
 }
 
 static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, int j, bool parsing_mixers) {

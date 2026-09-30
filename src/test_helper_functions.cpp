@@ -196,6 +196,38 @@ TEST_F(HelperFunctionsTest, should_close_split_file_no_idle) {
     EXPECT_FALSE(should_close_split_file(10.0, 0.1, 1.0, 6000.0, 0.5));
 }
 
+TEST_F(HelperFunctionsTest, should_close_split_file_max_time_past_max) {
+    EXPECT_TRUE(should_close_split_file_max_time(6001.0, 6000.0));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_time_at_max) {
+    EXPECT_FALSE(should_close_split_file_max_time(6000.0, 6000.0));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_time_under_max) {
+    EXPECT_FALSE(should_close_split_file_max_time(10.0, 6000.0));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_past_max_idle) {
+    EXPECT_TRUE(should_close_split_file_idle(10.0, 0.6, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_at_max_idle) {
+    EXPECT_FALSE(should_close_split_file_idle(10.0, 0.5, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_at_min_duration) {
+    EXPECT_FALSE(should_close_split_file_idle(1.0, 10.0, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_under_min_duration) {
+    EXPECT_FALSE(should_close_split_file_idle(0.5, 10.0, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_ignores_max_time) {
+    EXPECT_FALSE(should_close_split_file_idle(6001.0, 0.1, 1.0, 0.5));
+}
+
 TEST_F(HelperFunctionsTest, valid_split_file_times_ok) {
     EXPECT_TRUE(valid_split_file_times(1.0, 60.0, 0.5));
 }
@@ -269,4 +301,28 @@ TEST_F(HelperFunctionsTest, setting_as_double_or_rejects_non_number) {
     config.getRoot().add("split_max_idle_time", libconfig::Setting::TypeString) = "2.0";
     double value = 0.0;
     EXPECT_FALSE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_bool_or_absent_uses_fallback) {
+    libconfig::Config config;
+    bool value = false;
+    EXPECT_TRUE(setting_as_bool_or(config.getRoot(), "split_include_transmission_start", true, &value));
+    EXPECT_TRUE(value);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_bool_or_present_overrides_fallback) {
+    libconfig::Config config;
+    config.getRoot().add("split_include_transmission_start", libconfig::Setting::TypeBoolean) = false;
+    bool value = true;
+    EXPECT_TRUE(setting_as_bool_or(config.getRoot(), "split_include_transmission_start", true, &value));
+    EXPECT_FALSE(value);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_bool_or_rejects_non_bool) {
+    libconfig::Config config;
+    config.getRoot().add("int_value", libconfig::Setting::TypeInt) = 1;
+    config.getRoot().add("string_value", libconfig::Setting::TypeString) = "true";
+    bool value = false;
+    EXPECT_FALSE(setting_as_bool_or(config.getRoot(), "int_value", false, &value));
+    EXPECT_FALSE(setting_as_bool_or(config.getRoot(), "string_value", false, &value));
 }

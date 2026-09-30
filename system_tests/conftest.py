@@ -380,12 +380,13 @@ def run_rtl_airband(
     binary: Path,
     config_path: Path,
     timeout_s: float,
+    check: bool = True,
 ) -> subprocess.CompletedProcess:
     """
     Run: <binary> -F -e -c <config_path>
 
     Captures stdout and stderr. On timeout, re-raises with captured stderr.
-    Asserts returncode == 0, including stderr in the assertion message on failure.
+    With check, asserts returncode == 0, including stderr in the assertion message.
     """
     cmd = (["sudo"] if _use_sudo else []) + [
         str(binary),
@@ -412,7 +413,7 @@ def run_rtl_airband(
             stderr=f"Process timed out after {timeout_s}s.\nStderr so far:\n{stderr_so_far}",
         ) from exc
 
-    assert result.returncode == 0, (
+    assert not check or result.returncode == 0, (
         f"rtl_airband exited with code {result.returncode}.\n"
         f"Command: {' '.join(cmd)}\n"
         f"Stderr:\n{result.stderr}\n"
