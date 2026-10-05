@@ -1,5 +1,8 @@
 name: Platform Build
 
+# All self-hosted hardware testing: the airband-proxy runner drives each Pi over
+# SSH. See "CI and Pull Request Checks" in CLAUDE.md for the setup and provisioning.
+
 on:
   push:
     branches: [main]
@@ -11,70 +14,70 @@ on:
 
 jobs:
   platform_build:
+    # Never run fork PRs on self-hosted hardware (public repo).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - runner: pi_3b
-            platform: rpiv2
-            sudo: true
-            uv_cmd: ~/.local/bin/uv
-            test_output_dir: /test_data/test_output
-            generated_input_dir: /test_data/generated_input
-            generated_input_max_bytes: 70M
-          - runner: pi_4b
+          - ssh_host: airband-4b   # 64-bit ARM, native build, no GPU FFT
             platform: native
-            sudo: false
-            uv_cmd: ~/.local/bin/uv
-            test_output_dir: /test_data/test_output
-            generated_input_dir: /test_data/generated_input
-            generated_input_max_bytes: 70M
-          - runner: ubuntu-22.04-arm
+            bcm_vc: false
+            timeout: 35
+          - ssh_host: airband-3b   # 32-bit ARM (bookworm), native build + VideoCore FFT
             platform: native
-            sudo: false
-            uv_cmd: uv
-            test_output_dir: ''
-            generated_input_dir: ''
-            generated_input_max_bytes: ''
+            bcm_vc: true
+            timeout: 45
 
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    runs-on: airband-proxy
+    timeout-minutes: ${{ matrix.timeout }}
+    env:
+      SSH_HOST: ${{ matrix.ssh_host }}
+      # In /tmp to limit SD card writes; reused across runs while it survives so
+      # builds stay warm. Safe only while a single airband-proxy runner exists (it
+      # runs one job at a time). Must match the sudoers glob in
+      # .github/setup_remote_test_target.
+      REMOTE_DIR: /tmp/rtlsdr-airband-ci-${{ matrix.ssh_host }}
+
     steps:
-    - name: Runner Info
-      run: printenv | sort
-
     - name: Checkout
       uses: actions/checkout@v6
       with:
         fetch-depth: '0' # need full history to get version from git tag
 
-    - name: Install uv
-      if: matrix.uv_cmd == 'uv'
-      uses: astral-sh/setup-uv@v8.1.0
-
-    - name: Install packaged dependencies
-      run: .github/install_dependencies
-
-    - name: Build
+    - name: Sync source to ${{ matrix.ssh_host }}
       run: |
-        cmake -B builds/Release -DCMAKE_BUILD_TYPE=Release -DPLATFORM=${{ matrix.platform }} -DBUILD_UNITTESTS=TRUE -S .
-        VERBOSE=1 cmake --build builds/Release -j
+        # .git is included so the remote build derives the version from git tags.
+        rsync -a --delete --exclude 'builds/' --exclude '.venv/' ./ "$SSH_HOST:$REMOTE_DIR/"
 
-    - name: Unit Tests
-      run: builds/Release/src/unittests
-
-    - name: Run system tests
-      env:
-        SUDO_FLAG: ${{ matrix.sudo == true && '--sudo' || '' }}
-        TEST_OUTPUT_DIR: ${{ matrix.test_output_dir }}
-        GENERATED_INPUT_DIR: ${{ matrix.generated_input_dir }}
-        GENERATED_INPUT_MAX_BYTES: ${{ matrix.generated_input_max_bytes }}
+    # Build deps are pre-installed on the target by .github/setup_remote_test_target,
+    # so install_dependencies is intentionally not run here (re-provision on change).
+    # ssh -tt: if the job is cancelled or times out, the remote pty hangs up and
+    # SIGHUP stops the remote build/tests instead of leaving them running.
+    # $REMOTE_DIR expands locally; \$ and ~ are left for the remote shell.
+    - name: Build on ${{ matrix.ssh_host }}
       run: |
-        ${{ matrix.uv_cmd }} run --no-group dev pytest system_tests/tests/ \
-          --binary builds/Release/src/rtl_airband \
-          $SUDO_FLAG \
-          ${TEST_OUTPUT_DIR:+--test-output-dir=$TEST_OUTPUT_DIR} \
-          ${GENERATED_INPUT_DIR:+--generated-input-dir=$GENERATED_INPUT_DIR} \
-          ${GENERATED_INPUT_MAX_BYTES:+--generated-input-max-bytes=$GENERATED_INPUT_MAX_BYTES} \
-          --mode thorough \
-          --clean \
-          -v
+        ssh -tt "$SSH_HOST" "set -euo pipefail
+          cd '$REMOTE_DIR'
+          cmake -B builds/Release -DCMAKE_BUILD_TYPE=Release \
+            -DPLATFORM=${{ matrix.platform }} \
+            ${{ matrix.bcm_vc && '-DBCM_VC=ON' || '-DBCM_VC=OFF' }} \
+            -DBUILD_UNITTESTS=TRUE -S .
+          VERBOSE=1 cmake --build builds/Release -j\$(nproc)"
+
+    - name: Unit tests on ${{ matrix.ssh_host }}
+      run: ssh -tt "$SSH_HOST" "cd '$REMOTE_DIR' && builds/Release/src/unittests"
+
+    - name: Run system tests on ${{ matrix.ssh_host }}
+      run: |
+        ssh -tt "$SSH_HOST" "set -euo pipefail
+          cd '$REMOTE_DIR'
+          ~/.local/bin/uv run --no-group dev pytest system_tests/tests/ \
+            --binary '$REMOTE_DIR/builds/Release/src/rtl_airband' \
+            ${{ matrix.bcm_vc && '--sudo' || '' }} \
+            --test-output-dir=/test_data/test_output \
+            --generated-input-dir=/test_data/generated_input \
+            --generated-input-max-bytes=70M \
+            --mode thorough \
+            --clean \
+            -v"

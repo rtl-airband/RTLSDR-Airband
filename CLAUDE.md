@@ -112,7 +112,7 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 
 ## CI and Pull Request Checks
 
-Four workflows run checks on open pull requests (`.github/workflows/`); the container build also runs on merges to `main`, tags, and a daily schedule. A fifth, `version_bump.yml`, runs after a PR is merged — see [Version Tagging](#version-tagging).
+Four workflows run checks on open pull requests (`.github/workflows/`); `platform_build.yml` skips fork PRs. All of them except `code_formatting.yml` also run on pushes to `main`, tags, `workflow_dispatch`, and a daily schedule; `code_formatting.yml` runs on PRs and daily. A fifth, `version_bump.yml`, runs after a PR is merged — see [Version Tagging](#version-tagging).
 
 **`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
 
@@ -123,9 +123,25 @@ cmake -B builds/Debug_nfm      -DCMAKE_BUILD_TYPE=Debug   -DNFM=TRUE -DBUILD_UNI
 cmake -B builds/Release        -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=TRUE
 cmake -B builds/Release_nfm    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DBUILD_UNITTESTS=TRUE
 ```
-Then runs `unittests` for all four, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
+Then runs `unittests` for all four, runs the system tests (`--mode thorough`) against the Release and Release+NFM builds, installs the Release+NFM build, and smoke-tests `rtl_airband -v`.
 
-**`platform_build.yml`** — builds and tests an AM Release configuration (`PLATFORM=native`) on a Pi 4B runner and an `ubuntu-22.04-arm` runner, then runs unit tests and system tests. (Pi 3B runner is currently disabled.)
+**`platform_build.yml`** — all self-hosted hardware. A single `airband-proxy` runner rsyncs the checkout to each Pi over SSH and runs build + unit tests + system tests there, so the Pis need no runner agent (32-bit ARM has no Node 24 after the Node 20 EOL):
+
+| Target | Arch | `PLATFORM` | `BCM_VC` | `--sudo` |
+|--------|------|------------|----------|----------|
+| `airband-4b` | 64-bit ARM | `native` | OFF | no |
+| `airband-3b` | 32-bit ARM | `native` | ON | yes |
+
+The workflow passes `--sudo` exactly when `BCM_VC=ON` (the VideoCore GPU FFT needs root). Each target's work dir is `/tmp/rtlsdr-airband-ci-<host>` to limit SD card writes, reused across runs while it survives so builds stay warm; this relies on there being a single `airband-proxy` runner, which runs one job at a time.
+
+The proxy runner runs as user `airband-proxy` (`700` home, no sudo) and holds the targets' SSH key. On each Pi, CI logs in as `airband-build`, which has no password and either no sudo or, on BCM targets, a sudo rule for only the per-run `rtl_airband` binary. Build deps are **pre-installed** on the Pis, so the workflow never runs `install_dependencies` there. **Re-provision the Pis when `.github/install_dependencies` changes** — optional drivers (MiriSDR, SoapySDR, PulseAudio) are auto-detected, so a stale target may silently build without them rather than fail.
+
+Provisioning:
+1. As `airband-proxy`, run `.github/setup_orchestrator_ssh` (creates the key, pins host keys, and writes the managed `~/.ssh/config.d/airband-ci`, prepending an `Include` for it to `~/.ssh/config`; don't hand-edit the managed file, it is regenerated on every run) and copy the `sudo PROXY_PUBKEY=… PROXY_FROM=… .github/setup_remote_test_target` command it prints for each target.
+2. Run that command on each Pi (installs deps, the `airband-build` login with the `from=`-restricted key, a `/test_data` tmpfs, and uv). On `BCM_VC` targets (`airband-3b`) add `RTL_SUDO=1` after `sudo` (`sudo RTL_SUDO=1 PROXY_PUBKEY=…`, since `sudo` drops variables set before it) to grant the `rtl_airband` sudo rule; without it the account gets no sudo.
+3. Re-run `.github/setup_orchestrator_ssh` to verify access.
+
+Self-hosted runner security (public repo): `platform_build` is the only self-hosted job and is gated with `if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository` so **fork** PRs never execute on the hardware — keep this guard on any self-hosted job. This complements the repo setting requiring approval for outside collaborators, network-segmented runners, and keeping repo secrets out of these workflows.
 
 **`build_docker_containers.yml`** — builds the multi-arch container image (`linux/amd64`, `386`, `arm64`, `arm/v6`, `arm/v7`), one job per platform via QEMU. Every image is smoke-tested (`rtl_airband -v`) under its target platform. On push/tag/schedule/`workflow_dispatch` the images are pushed by digest to GitHub Container Registry and the `merge` job combines the per-arch digests into a single manifest. Pull requests only build and smoke-test locally (`--load`); a fork PR gets a read-only `GITHUB_TOKEN`, so the registry push is denied. The `Prepare` step's `push` output gates this.
 
