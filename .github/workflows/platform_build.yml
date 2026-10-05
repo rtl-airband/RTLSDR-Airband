@@ -12,6 +12,9 @@ on:
   schedule:
     - cron: '39 13 * * *' # run daily
 
+permissions:
+  contents: read
+
 jobs:
   platform_build:
     # Never run fork PRs on self-hosted hardware (public repo).
