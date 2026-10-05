@@ -74,12 +74,12 @@ fi
 # pre-installed above, so no apt/make/ldconfig sudo.
 # NOTE: running a CI-controlled binary as root is effectively root-equivalent;
 # this scopes intent and blocks accidental `sudo <anything>`, not a hard boundary.
-RTL_GLOB="/tmp/rtlsdr-airband-ci-*/builds/Release/src/rtl_airband"  # REMOTE_DIR in the workflow
+RTL_BIN="${CI_HOME}/rtlsdr-airband-ci/builds/Release/src/rtl_airband"  # REMOTE_DIR in the workflow
 SUDOERS_FILE="/etc/sudoers.d/${CI_USER}"
 if [[ "${RTL_SUDO}" == 1 ]]; then
     cat > "${SUDOERS_FILE}" <<EOF
 # Managed by .github/setup_remote_test_target — do not edit by hand.
-Cmnd_Alias RTLSDR_CI = ${RTL_GLOB} -F -e -c *
+Cmnd_Alias RTLSDR_CI = ${RTL_BIN} -F -e -c *
 ${CI_USER} ALL=(root) NOPASSWD: RTLSDR_CI
 EOF
     chmod 440 "${SUDOERS_FILE}"

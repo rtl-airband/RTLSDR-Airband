@@ -36,11 +36,11 @@ jobs:
     timeout-minutes: ${{ matrix.timeout }}
     env:
       SSH_HOST: ${{ matrix.ssh_host }}
-      # In /tmp to limit SD card writes; reused across runs while it survives so
-      # builds stay warm. Safe only while a single airband-proxy runner exists (it
-      # runs one job at a time). Must match the sudoers glob in
-      # .github/setup_remote_test_target.
-      REMOTE_DIR: /tmp/rtlsdr-airband-ci-${{ matrix.ssh_host }}
+      # Relative to the CI account's home on the target (not a tmpfs, which is too
+      # small for the build tree and venv) and reused across runs so builds stay warm.
+      # Safe only while a single airband-proxy runner exists (it runs one job at a
+      # time). Must match the sudoers rule in .github/setup_remote_test_target.
+      REMOTE_DIR: rtlsdr-airband-ci
 
     steps:
     - name: Checkout
@@ -76,7 +76,7 @@ jobs:
         ssh -tt "$SSH_HOST" "set -euo pipefail
           cd '$REMOTE_DIR'
           ~/.local/bin/uv run --no-group dev pytest system_tests/tests/ \
-            --binary '$REMOTE_DIR/builds/Release/src/rtl_airband' \
+            --binary \"\$HOME/$REMOTE_DIR/builds/Release/src/rtl_airband\" \
             ${{ matrix.bcm_vc && '--sudo' || '' }} \
             --test-output-dir=/test_data/test_output \
             --generated-input-dir=/test_data/generated_input \

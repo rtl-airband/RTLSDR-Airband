@@ -132,7 +132,7 @@ Then runs `unittests` for all four, runs the system tests (`--mode thorough`) ag
 | `airband-4b` | 64-bit ARM | `native` | OFF | no |
 | `airband-3b` | 32-bit ARM | `native` | ON | yes |
 
-The workflow passes `--sudo` exactly when `BCM_VC=ON` (the VideoCore GPU FFT needs root). Each target's work dir is `/tmp/rtlsdr-airband-ci-<host>` to limit SD card writes, reused across runs while it survives so builds stay warm; this relies on there being a single `airband-proxy` runner, which runs one job at a time.
+The workflow passes `--sudo` exactly when `BCM_VC=ON` (the VideoCore GPU FFT needs root). Each target's work dir is `~/rtlsdr-airband-ci` in the CI account's home (not a tmpfs, which is too small for the build tree and uv venv), reused across runs so builds stay warm; this relies on there being a single `airband-proxy` runner, which runs one job at a time.
 
 The proxy runner runs as user `airband-proxy` (`700` home, no sudo) and holds the targets' SSH key. On each Pi, CI logs in as `airband-build`, which has no password and either no sudo or, on BCM targets, a sudo rule for only the per-run `rtl_airband` binary. Build deps are **pre-installed** on the Pis, so the workflow never runs `install_dependencies` there. **Re-provision the Pis when `.github/install_dependencies` changes** — optional drivers (MiriSDR, SoapySDR, PulseAudio) are auto-detected, so a stale target may silently build without them rather than fail.
 
