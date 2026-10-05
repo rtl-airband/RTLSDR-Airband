@@ -27,8 +27,10 @@ jobs:
             platform: native
             bcm_vc: false
             timeout: 35
-          - ssh_host: airband-3b   # 32-bit ARM (bookworm), native build + VideoCore FFT
-            platform: native
+          # BCM_VC needs rpiv2: the GPU FFT path calls samplefft from the NEON
+          # assembly that only rpiv2 builds.
+          - ssh_host: airband-3b   # 32-bit ARM (bookworm), VideoCore FFT
+            platform: rpiv2
             bcm_vc: true
             timeout: 45
 

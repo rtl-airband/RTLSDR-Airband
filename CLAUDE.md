@@ -69,7 +69,7 @@ Key CMake flags (all in `src/CMakeLists.txt`):
 | `SOAPYSDR` | ON | SoapySDR (vendor-neutral) driver |
 | `PULSEAUDIO` | ON | PulseAudio output |
 | `BUILD_UNITTESTS` | OFF | Build Google Test unit tests |
-| `BCM_VC` | OFF | Broadcom VideoCore GPU FFT (RPi v2 only) |
+| `BCM_VC` | OFF | Broadcom VideoCore GPU FFT (RPi v2 only; requires `PLATFORM=rpiv2`, which also turns it on) |
 
 ## Docker
 
@@ -130,7 +130,7 @@ Then runs `unittests` for all four, runs the system tests (`--mode thorough`) ag
 | Target | Arch | `PLATFORM` | `BCM_VC` | `--sudo` |
 |--------|------|------------|----------|----------|
 | `airband-4b` | 64-bit ARM | `native` | OFF | no |
-| `airband-3b` | 32-bit ARM | `native` | ON | yes |
+| `airband-3b` | 32-bit ARM | `rpiv2` | ON | yes |
 
 The workflow passes `--sudo` exactly when `BCM_VC=ON` (the VideoCore GPU FFT needs root). Each target's work dir is `~/rtlsdr-airband-ci` in the CI account's home (not a tmpfs, which is too small for the build tree and uv venv), reused across runs so builds stay warm; this relies on there being a single `airband-proxy` runner, which runs one job at a time.
 
