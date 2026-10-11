@@ -182,22 +182,20 @@ End-to-end tests live in `system_tests/`. They run the actual binary against gen
 # Run system tests (requires Release binaries — run scripts/run_unit_tests first)
 scripts/run_system_tests
 
-# Run manually from the system_tests directory
-cd system_tests
+# Run manually from the repo root
 uv sync
-uv run pytest tests/ \
-    --binary ../builds/Release/src/rtl_airband \
-    --nfm-binary ../builds/Release_nfm/src/rtl_airband \
+uv run pytest system_tests/tests/ \
+    --binary builds/Release/src/rtl_airband \
+    --nfm-binary builds/Release_nfm/src/rtl_airband \
     -v
 ```
 
-Python tooling (formatter, import sorter, linter) is configured in `system_tests/pyproject.toml` under `[tool.black]`, `[tool.isort]`, and `[tool.pylint]`. Run them manually:
+Python tooling (formatter, import sorter, linter) is configured in the repo-root `pyproject.toml` under `[tool.black]`, `[tool.isort]`, and `[tool.pylint]`. Run them manually from the repo root:
 
 ```bash
-cd system_tests
-uv run black .
-uv run isort .
-uv run pylint conftest.py helpers/ tests/
+uv run black system_tests/
+uv run isort system_tests/
+uv run pylint system_tests/conftest.py system_tests/helpers/ system_tests/tests/
 ```
 
 ## Architecture
