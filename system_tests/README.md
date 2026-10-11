@@ -10,9 +10,9 @@ Each test:
 3. Runs the binary and waits for it to finish
 4. Validates the output MP3s and the Prometheus stats file
 
-IQ fixtures are cached in `.generated_input/` and reused across runs. Test outputs land in `test_output/<test-name>/` and are kept for debugging.
+IQ fixtures are cached in `system_tests/.generated_input/` and reused across runs. Test outputs land in `system_tests/test_output/<test-name>/` and are kept for debugging.
 
-> **Cache invalidation**: the cache key is the fixture parameters (frequency offset, duration, etc.), not the generator code. If the signal generation logic in `helpers/iq_generator.py` is changed (e.g., to fix a bug), delete `.generated_input/` to force regeneration:
+> **Cache invalidation**: the cache key is the fixture parameters (frequency offset, duration, etc.), not the generator code. If the signal generation logic in `system_tests/helpers/iq_generator.py` is changed (e.g., to fix a bug), delete `system_tests/.generated_input/` to force regeneration:
 > ```bash
 > rm -rf system_tests/.generated_input/
 > ```
@@ -30,12 +30,11 @@ The full fixture set is a few hundred MB. On a space-constrained host you can ca
 # From the repo root — builds Release binaries first, then runs system tests
 scripts/run_system_tests
 
-# Or manually from inside system_tests/
-cd system_tests
+# Or manually, also from the repo root
 uv sync
-uv run pytest tests/ \
-    --binary ../builds/Release/src/rtl_airband \
-    --nfm-binary ../builds/Release_nfm/src/rtl_airband \
+uv run pytest system_tests/tests/ \
+    --binary builds/Release/src/rtl_airband \
+    --nfm-binary builds/Release_nfm/src/rtl_airband \
     -v
 ```
 
@@ -52,10 +51,10 @@ Pass `--mode` to trade off wall-clock time vs. strictness. MP3 duration toleranc
 
 ```bash
 # Fast parallel run
-uv run pytest tests/ --binary ../builds/Release/src/rtl_airband -n auto --mode fast
+uv run pytest system_tests/tests/ --binary builds/Release/src/rtl_airband -n auto --mode fast
 
 # Strict serial run
-uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --mode thorough
+uv run pytest system_tests/tests/ --binary builds/Release/src/rtl_airband --mode thorough
 ```
 
 ### Output directory
@@ -63,7 +62,7 @@ uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --mode thorough
 By default tests write per-test artifacts under `system_tests/test_output/<test-name>/`. On hosts where SD-card writeback stalls inject timing jitter (notably the Pi 4B CI runner), point this at a tmpfs:
 
 ```bash
-uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --test-output-dir=/test_data
+uv run pytest system_tests/tests/ --binary builds/Release/src/rtl_airband --test-output-dir=/test_data
 ```
 
 The `--test-output-dir` path must exist and be writable by the test process. The cleanup logic in `conftest.py` only wipes the *contents* of the directory, never the directory itself, so it is safe to point at a pre-mounted tmpfs.
@@ -73,7 +72,7 @@ The `--test-output-dir` path must exist and be writable by the test process. The
 By default IQ fixtures are cached under `system_tests/.generated_input/`. Override with `--generated-input-dir` to point the cache at a tmpfs, which keeps fixture reads/writes off slow or wear-sensitive storage (e.g. the Pi runners' SD cards):
 
 ```bash
-uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --generated-input-dir=/test_data/generated_input
+uv run pytest system_tests/tests/ --binary builds/Release/src/rtl_airband --generated-input-dir=/test_data/generated_input
 ```
 
 Like `--test-output-dir`, `--clean` only wipes the *contents* of this directory, so it is safe to point at a pre-mounted tmpfs subdirectory. Keep it a **sibling** of the output directory (not a parent/child), so the two cleanups don't interfere.
@@ -83,7 +82,7 @@ Like `--test-output-dir`, `--clean` only wipes the *contents* of this directory,
 The cache holds every distinct IQ fixture generated during a run (a few hundred MB in total). By default it is unbounded. On a host with limited disk — or when the cache lives on a small tmpfs — cap it with `--generated-input-max-bytes`:
 
 ```bash
-uv run pytest tests/ --binary ../builds/Release/src/rtl_airband --generated-input-max-bytes=90M
+uv run pytest system_tests/tests/ --binary builds/Release/src/rtl_airband --generated-input-max-bytes=90M
 ```
 
 The value accepts a `K`/`M`/`G` suffix or a plain byte count. When set, the least-recently-used fixtures are evicted before a new one is written, so the on-disk total stays within budget. Fixtures reused within a run (e.g. across the non-nfm/nfm parametrization) stay warm and are not regenerated. A single fixture larger than the whole budget is still written. Tests run serially in `--mode thorough`, so the working set is small: the peak is one fixture at a time (the largest is ~66 MiB), which comfortably fits a budget below the total cache size.
@@ -111,13 +110,13 @@ This keeps all fixture and output I/O off the SD card. The `ubuntu-22.04-arm` ru
 | `test_multichannel.py` | Two simultaneous AM channels each produce independent audio |
 | `test_nfm.py` | NFM demodulation produces correct-duration audio (NFM binary only) |
 | `test_scan.py` | Scan mode stitches audio from two frequencies with a noise gap in between |
-| `test_user_provided.py` | Dynamically generated tests from JSON files in `user_provided/` |
+| `test_user_provided.py` | Dynamically generated tests from JSON files in `system_tests/user_provided/` |
 
 ## Adding User-Defined Tests
 
-You can run tests against your own IQ files — no Python required. Drop one or more JSON files into `user_provided/` and they are picked up automatically on the next test run.
+You can run tests against your own IQ files — no Python required. Drop one or more JSON files into `system_tests/user_provided/` and they are picked up automatically on the next test run.
 
-Place your IQ files in `user_provided/` (already `.gitignore`d). IQ file paths in the JSON are resolved relative to the JSON file's directory, so a bare filename like `"my_recording.iq"` looks for the file alongside the JSON.
+Place your IQ files in `system_tests/user_provided/` (already `.gitignore`d). IQ file paths in the JSON are resolved relative to the JSON file's directory, so a bare filename like `"my_recording.iq"` looks for the file alongside the JSON.
 
 ### Example JSON file
 
@@ -185,14 +184,13 @@ Place your IQ files in `user_provided/` (already `.gitignore`d). IQ file paths i
 ### Running user-defined tests
 
 ```bash
-cd system_tests
-uv run pytest tests/test_user_provided.py \
-    --binary ../builds/Release/src/rtl_airband \
-    --nfm-binary ../builds/Release_nfm/src/rtl_airband \
+uv run pytest system_tests/tests/test_user_provided.py \
+    --binary builds/Release/src/rtl_airband \
+    --nfm-binary builds/Release_nfm/src/rtl_airband \
     -v
 ```
 
-All `*.json` files in `user_provided/` are loaded automatically. Test names must be unique across all JSON files in the directory.
+All `*.json` files in `system_tests/user_provided/` are loaded automatically. Test names must be unique across all JSON files in the directory.
 
 ### JSON field reference
 
@@ -264,18 +262,18 @@ Set `centerfreq_hz` and `sample_rate` in the JSON to match the `-f` and `-s` val
 
 ## Python Tooling
 
-```bash
-cd system_tests
+From the repo root:
 
+```bash
 # Format
-uv run black .
-uv run isort .
+uv run black system_tests/
+uv run isort system_tests/
 
 # Lint
-uv run pylint conftest.py helpers/ tests/
+uv run pylint system_tests/conftest.py system_tests/helpers/ system_tests/tests/
 ```
 
-Configuration for all three tools lives in `pyproject.toml`.
+Configuration for all three tools lives in the repo-root `pyproject.toml`.
 
 ## Pre-commit Hooks
 

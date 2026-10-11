@@ -7,7 +7,6 @@ dependencies = [
     "pytest-timeout>=2.3",
     "pytest-xdist>=3.0",
     "numpy>=2.0",
-    "scipy>=1.10",
     "mutagen>=1.45",
 ]
 
@@ -23,9 +22,6 @@ environments = [
 
 [tool.uv.sources]
 numpy = [
-    { index = "piwheels", marker = "platform_machine == 'armv7l' or platform_machine == 'armv6l'" },
-]
-scipy = [
     { index = "piwheels", marker = "platform_machine == 'armv7l' or platform_machine == 'armv6l'" },
 ]
 
