@@ -103,10 +103,11 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 idata->send_scan_freq_tags = (bool)outs[o]["send_scan_freq_tags"];
             else
                 idata->send_scan_freq_tags = 0;
+#ifdef LIBSHOUT_HAS_TLS
+            idata->tls_mode = SHOUT_TLS_DISABLED;
+#endif /* LIBSHOUT_HAS_TLS */
             if (outs[o].exists("tls")) {
-#ifndef LIBSHOUT_HAS_TLS
-                output_error(i, j, o, parsing_mixers, "tls is set in the config but not supported by this version of libshout");
-#else
+#ifdef LIBSHOUT_HAS_TLS
                 if (outs[o]["tls"].getType() == libconfig::Setting::TypeString) {
                     if (!strcmp(outs[o]["tls"], "auto")) {
                         idata->tls_mode = SHOUT_TLS_AUTO;
@@ -124,8 +125,8 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
                 } else {
                     output_error(i, j, o, parsing_mixers, "tls value must be a string");
                 }
-            } else {
-                idata->tls_mode = SHOUT_TLS_DISABLED;
+#else
+                output_error(i, j, o, parsing_mixers, "tls is not supported: rtl_airband was built against a libshout without TLS support");
 #endif /* LIBSHOUT_HAS_TLS */
             }
 
