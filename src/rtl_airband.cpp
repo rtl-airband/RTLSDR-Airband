@@ -60,6 +60,7 @@
 #include "rtl_airband.h"
 #include "squelch.h"
 #include "logging.h"
+#include "stats_update_interval.h"
 
 #ifdef WITH_PROFILING
 #include "gperftools/profiler.h"
@@ -80,9 +81,9 @@ bool multiple_demod_threads = false;
 bool multiple_output_threads = false;
 bool log_scan_activity = false;
 char *stats_filepath = NULL;
+int stats_update_interval = DEFAULT_STATS_UPDATE_INTERVAL;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
-int stats_update_interval = 15; // Stats update every 15 seconf by default
 
 #ifdef NFM
 float alpha = exp(-1.0f/(WAVE_RATE * 2e-4));
@@ -847,9 +848,12 @@ int main(int argc, char* argv[]) {
 			log_scan_activity = true;
 		if(root.exists("stats_filepath"))
 			stats_filepath = strdup(root["stats_filepath"]);
-        	if (root.exists("stats_update_interval")) {
-            		stats_update_interval = (int)root["stats_update_interval"];
-        	}
+		if(root.exists("stats_update_interval"))
+			stats_update_interval = (int)root["stats_update_interval"];
+		if(!is_valid_stats_update_interval(stats_update_interval)) {
+			cerr << "Configuration error: stats_update_interval must be greater than zero\n";
+			error();
+		}
 
 #ifdef NFM
 		if(root.exists("tau"))
