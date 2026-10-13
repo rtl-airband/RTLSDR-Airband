@@ -358,6 +358,8 @@ if(BUILD_UNITTESTS)
 		ctcss.cpp
 		generate_signal.cpp
 		helper_functions.cpp
+		udp_stream.cpp
+		util.cpp
 	)
 
 	add_executable(
@@ -371,10 +373,10 @@ if(BUILD_UNITTESTS)
 		${rtl_airband_extra_libs}
 	)
 
-	# add include for config.h and libconfig++ (needed by helper_functions.cpp)
+	# config.h and the dependencies of the production sources used by tests
 	target_include_directories (unittests PUBLIC
 		${CMAKE_CURRENT_BINARY_DIR}
-		${CONFIG_INCLUDE_DIRS}
+		${rtl_airband_include_dirs}
 	)
 
 	include(GoogleTest)

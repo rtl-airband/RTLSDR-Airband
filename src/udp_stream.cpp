@@ -26,10 +26,11 @@
 
 #include "rtl_airband.h"
 
-bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
+bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes) {
     // pre-allocate the stereo buffer
     if (mode == MM_STEREO) {
-        sdata->stereo_buffer_len = len * 2;
+        assert(len_bytes % sizeof(float) == 0);
+        sdata->stereo_buffer_len = (len_bytes / sizeof(float)) * 2;
         sdata->stereo_buffer = (float*)XCALLOC(sdata->stereo_buffer_len, sizeof(float));
     } else {
         sdata->stereo_buffer_len = 0;
@@ -83,21 +84,23 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
     return true;
 }
 
-void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len) {
+void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len_bytes) {
     if (sdata->send_socket != -1) {
         // Send without blocking or checking for success
-        sendto(sdata->send_socket, data, len, MSG_DONTWAIT | MSG_NOSIGNAL, &sdata->dest_sockaddr, sdata->dest_sockaddr_len);
+        sendto(sdata->send_socket, data, len_bytes, MSG_DONTWAIT | MSG_NOSIGNAL, &sdata->dest_sockaddr, sdata->dest_sockaddr_len);
     }
 }
 
-void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len) {
+void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len_bytes) {
     if (sdata->send_socket != -1) {
-        assert(len * 2 <= sdata->stereo_buffer_len);
-        for (size_t i = 0; i < len; ++i) {
+        assert(len_bytes % sizeof(float) == 0);
+        const size_t sample_count = len_bytes / sizeof(float);
+        assert(sample_count <= sdata->stereo_buffer_len / 2);
+        for (size_t i = 0; i < sample_count; ++i) {
             sdata->stereo_buffer[2 * i] = data_left[i];
             sdata->stereo_buffer[2 * i + 1] = data_right[i];
         }
-        udp_stream_write(sdata, sdata->stereo_buffer, len * 2);
+        udp_stream_write(sdata, sdata->stereo_buffer, len_bytes * 2);
     }
 }
 
