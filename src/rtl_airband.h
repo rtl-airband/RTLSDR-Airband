@@ -151,15 +151,13 @@ struct file_data {
 
 struct udp_stream_data {
     float* stereo_buffer;
-    size_t stereo_buffer_len;
+    size_t stereo_buffer_len;  // number of float elements, including both channels
 
     bool continuous;
     const char* dest_address;
     const char* dest_port;
 
     int send_socket;
-    struct sockaddr dest_sockaddr;
-    socklen_t dest_sockaddr_len;
 };
 
 #ifdef WITH_PULSEAUDIO
@@ -405,9 +403,11 @@ int parse_devices(libconfig::Setting& devs);
 int parse_mixers(libconfig::Setting& mx);
 
 // udp_stream.cpp
-bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len);
-void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len);
-void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len);
+// Lengths are in bytes per channel; stereo lengths must contain whole floats
+// and writes must fit the block size supplied to udp_stream_init().
+bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes);
+void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len_bytes);
+void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len_bytes);
 void udp_stream_shutdown(udp_stream_data* sdata);
 
 #ifdef WITH_PULSEAUDIO
