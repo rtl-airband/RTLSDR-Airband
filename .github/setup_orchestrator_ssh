@@ -1,0 +1,115 @@
+#!/bin/bash
+#
+# Configure the SSH-proxy runner to drive the remote build/test targets over SSH
+# (see .github/workflows/platform_build.yml). Run as the proxy runner's
+# user (e.g. airband-proxy).  This user needs no sudo.
+#
+#   .github/setup_orchestrator_ssh [target ...]
+#
+# Defaults to the CI targets below. Creates the key, pins host keys and writes a
+# managed ssh config, then prints the command that authorizes the key on each
+# target (the target account has no password, so the key is installed there as
+# root by .github/setup_remote_test_target). Re-run afterwards to verify access.
+# Idempotent. Override via env: CI_USER, KEY_FILE, FROM (e.g. FROM="10.0.0.0/24").
+
+set -euo pipefail
+
+CI_USER="${CI_USER:-airband-build}"
+KEY_FILE="${KEY_FILE:-${HOME}/.ssh/id_ci_runner}"
+
+if [[ "$#" -gt 0 ]]; then
+    TARGETS=("$@")
+else
+    TARGETS=(airband-4b airband-3b)
+fi
+
+mkdir -p "${HOME}/.ssh"
+chmod 700 "${HOME}/.ssh"
+
+# Dedicated keypair, no passphrase (unattended runner)
+if [[ -f "${KEY_FILE}" ]]; then
+    echo "Key ${KEY_FILE} already exists"
+else
+    echo "Generating ${KEY_FILE}"
+    ssh-keygen -t ed25519 -f "${KEY_FILE}" -N "" -C "$(hostname)-actions-runner"
+fi
+PUBKEY="$(cat "${KEY_FILE}.pub")"
+
+KNOWN_HOSTS="${HOME}/.ssh/known_hosts"
+CONFIG="${HOME}/.ssh/config"
+
+# Regenerated on every run so config changes and removed targets take effect.
+CI_CONFIG="${HOME}/.ssh/config.d/airband-ci"
+mkdir -p "$(dirname "${CI_CONFIG}")"
+touch "${KNOWN_HOSTS}" "${CONFIG}"
+: > "${CI_CONFIG}"
+chmod 600 "${KNOWN_HOSTS}" "${CONFIG}" "${CI_CONFIG}"
+
+# Include must precede any Host block to apply, so prepend it.
+if ! grep -qxF "Include config.d/airband-ci" "${CONFIG}"; then
+    printf 'Include config.d/airband-ci\n\n%s\n' "$(cat "${CONFIG}")" > "${CONFIG}"
+fi
+
+for host in "${TARGETS[@]}"; do
+    echo "=== ${host} ==="
+
+    # Pin the target host key (prevents MITM; avoids interactive prompts in CI)
+    if ssh-keygen -F "${host}" -f "${KNOWN_HOSTS}" > /dev/null 2>&1; then
+        echo "Host key already pinned"
+    else
+        echo "Pinning host key"
+        ssh-keyscan "${host}" >> "${KNOWN_HOSTS}" 2> /dev/null ||
+            echo "WARNING: ssh-keyscan ${host} failed; re-run this script once ${host} is reachable" >&2
+    fi
+
+    # ssh config so the workflow's bare `ssh ${host}` resolves user+key; ControlMaster
+    # reuses one connection across a job's ssh/rsync steps.
+    cat >> "${CI_CONFIG}" <<EOF
+Host ${host}
+    User ${CI_USER}
+    IdentityFile ${KEY_FILE}
+    IdentitiesOnly yes
+    BatchMode yes
+    ConnectTimeout 15
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 10m
+
+EOF
+
+    # from= pattern the target should restrict this key to
+    if [[ -n "${FROM:-}" ]]; then
+        from_pattern="${FROM}"
+    else
+        target_ip="$(getent hosts "${host}" | awk '{print $1; exit}' || true)"
+        from_pattern=""
+        if [[ -n "${target_ip}" ]]; then
+            from_pattern="$(ip -4 route get "${target_ip}" 2> /dev/null | grep -oP 'src \K\S+' || true)"
+        fi
+        [[ -n "${from_pattern}" ]] || from_pattern="$(hostname -I | awk '{print $1}')"
+    fi
+    echo "To authorize this runner, run on ${host}:"
+    printf "  sudo PROXY_PUBKEY='%s' PROXY_FROM='%s' .github/setup_remote_test_target\n" \
+        "${PUBKEY}" "${from_pattern}"
+done
+
+echo
+echo "Verifying key-based access:"
+rc=0
+for host in "${TARGETS[@]}"; do
+    printf '  %-14s ' "${host}:"
+    if ! ssh "${host}" 'echo ok $(uname -m)'; then
+        echo "FAILED (run the command above on ${host}, then re-run this script)"
+        rc=1
+    fi
+done
+
+# Isolation check: the proxy runner only needs outbound SSH and should hold no sudo.
+echo
+if sudo -n -l > /dev/null 2>&1; then
+    echo "WARNING: this user has passwordless sudo; the proxy runner should have none." >&2
+else
+    echo "Isolation check: proxy runner has no sudo (as expected)."
+fi
+
+exit "${rc}"

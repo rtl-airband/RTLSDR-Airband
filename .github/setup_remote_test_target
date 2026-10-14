@@ -1,0 +1,137 @@
+#!/bin/bash
+#
+# Provision a Raspberry Pi as a remote build/test target for the airband-proxy
+# runner (see .github/workflows/platform_build.yml). Run ON the target as root:
+#
+#   sudo PROXY_PUBKEY='ssh-ed25519 AAAA...' PROXY_FROM='<proxy-ip>' .github/setup_remote_test_target
+#
+# PROXY_PUBKEY/PROXY_FROM come from .github/setup_orchestrator_ssh, which prints
+# this command. The CI account has no password, so the key is authorized here.
+# Idempotent; PROXY_PUBKEY may be omitted on re-runs to keep the existing key.
+# Set RTL_SUDO=1 (after `sudo`) on targets that build BCM_VC (they run system tests with --sudo);
+# otherwise the CI account gets no sudo. Override defaults with CI_USER, TMPFS_DIR, TMPFS_SIZE.
+
+set -euo pipefail
+
+CI_USER="${CI_USER:-airband-build}"
+TMPFS_DIR="${TMPFS_DIR:-/test_data}"
+TMPFS_SIZE="${TMPFS_SIZE:-256M}"
+RTL_SUDO="${RTL_SUDO:-0}"
+
+if [[ "${EUID}" -ne 0 ]]; then
+    echo "Must run as root (use sudo)." >&2
+    exit 1
+fi
+
+# rsync (the orchestrator syncs the source tree here) and git/curl (used by
+# install_dependencies below). Not present by default on Raspberry Pi OS Lite.
+apt-get update -y
+apt-get install -y rsync git curl
+
+# Pre-install all build dependencies now so CI can skip install_dependencies on
+# this persistent runner — removes the per-run libmirisdr rebuild (slow on ARMv6)
+# and the deps sudo. Re-run this script when .github/install_dependencies changes.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEPS_TMP="$(mktemp -d)"
+( cd "${DEPS_TMP}" && "${SCRIPT_DIR}/install_dependencies" )
+rm -rf "${DEPS_TMP}"
+
+# Dedicated unprivileged CI user
+if id "${CI_USER}" > /dev/null 2>&1; then
+    echo "User ${CI_USER} already exists"
+else
+    echo "Creating user ${CI_USER}"
+    adduser --disabled-password --gecos "" "${CI_USER}"
+fi
+CI_HOME="$(getent passwd "${CI_USER}" | cut -d: -f6)"
+as_ci() { sudo -u "${CI_USER}" "$@"; }
+
+# Authorize the proxy runner's key, restricted to its address.
+AUTH_KEYS="${CI_HOME}/.ssh/authorized_keys"
+if [[ -n "${PROXY_PUBKEY:-}" ]]; then
+    read -r key_type key_body _ <<< "${PROXY_PUBKEY}"
+    if [[ "${key_type}" != ssh-* || -z "${key_body:-}" ]]; then
+        echo "PROXY_PUBKEY is not an OpenSSH public key" >&2
+        exit 1
+    fi
+    if [[ -z "${PROXY_FROM:-}" ]]; then
+        echo "WARNING: PROXY_FROM not set; the key will be usable from any address" >&2
+    fi
+    install -d -m 700 -o "${CI_USER}" -g "${CI_USER}" "${CI_HOME}/.ssh"
+    touch "${AUTH_KEYS}"
+    # Replace any earlier copy of this key (base64 never contains '|').
+    sed -i "\\|${key_body}|d" "${AUTH_KEYS}"
+    echo "${PROXY_FROM:+from=\"${PROXY_FROM}\" }${PROXY_PUBKEY}" >> "${AUTH_KEYS}"
+    chown "${CI_USER}:${CI_USER}" "${AUTH_KEYS}"
+    chmod 600 "${AUTH_KEYS}"
+    echo "Authorized proxy key${PROXY_FROM:+ from ${PROXY_FROM}}"
+elif [[ ! -s "${AUTH_KEYS}" ]]; then
+    echo "WARNING: no PROXY_PUBKEY given and no authorized key yet; the proxy cannot connect" >&2
+fi
+
+# Minimal passwordless sudo: the ONLY thing CI elevates is the system-test run of
+# the freshly-built rtl_airband (--sudo, for BCM VideoCore GPU FFT). Build deps are
+# pre-installed above, so no apt/make/ldconfig sudo.
+# NOTE: running a CI-controlled binary as root is effectively root-equivalent;
+# this scopes intent and blocks accidental `sudo <anything>`, not a hard boundary.
+RTL_BIN="${CI_HOME}/rtlsdr-airband-ci/builds/Release/src/rtl_airband"  # REMOTE_DIR in the workflow
+SUDOERS_FILE="/etc/sudoers.d/${CI_USER}"
+if [[ "${RTL_SUDO}" == 1 ]]; then
+    cat > "${SUDOERS_FILE}" <<EOF
+# Managed by .github/setup_remote_test_target — do not edit by hand.
+Cmnd_Alias RTLSDR_CI = ${RTL_BIN} -F -e -c *
+${CI_USER} ALL=(root) NOPASSWD: RTLSDR_CI
+EOF
+    chmod 440 "${SUDOERS_FILE}"
+    visudo -cf "${SUDOERS_FILE}" > /dev/null
+else
+    rm -f "${SUDOERS_FILE}"
+fi
+
+# Verify the CI user got exactly that privilege (or none without RTL_SUDO=1).
+sudo_ok=1
+if [[ "${RTL_SUDO}" == 1 ]] && ! as_ci sudo -n -l 2> /dev/null | grep -qF "rtl_airband"; then
+    echo "FAIL: rtl_airband not permitted" >&2
+    sudo_ok=0
+fi
+if as_ci sudo -n whoami > /dev/null 2>&1; then
+    echo "FAIL: arbitrary sudo allowed — sudoers too broad" >&2
+    sudo_ok=0
+fi
+if [[ "${sudo_ok}" -ne 1 ]]; then
+    echo "Sudo permission check FAILED — review ${SUDOERS_FILE}" >&2
+    exit 1
+fi
+echo "Sudo permission check passed."
+
+# tmpfs for system-test output and the IQ fixture cache (spares the SD card)
+if ! grep -qE "[[:space:]]${TMPFS_DIR}[[:space:]]" /etc/fstab; then
+    echo "Adding tmpfs mount for ${TMPFS_DIR}"
+    printf 'tmpfs %s tmpfs defaults,noatime,size=%s,uid=%s,gid=%s 0 0\n' \
+        "${TMPFS_DIR}" "${TMPFS_SIZE}" "$(id -u "${CI_USER}")" "$(id -g "${CI_USER}")" >> /etc/fstab
+fi
+mkdir -p "${TMPFS_DIR}"
+mountpoint -q "${TMPFS_DIR}" || mount "${TMPFS_DIR}"
+
+# uv for the CI user (the workflow calls ~/.local/bin/uv). The standalone
+# installer ships an armv6l build; fall back to pip if it won't run (ARMv6).
+UV="${CI_HOME}/.local/bin/uv"
+uv_runnable() { as_ci "${UV}" --version > /dev/null 2>&1; }
+
+if uv_runnable; then
+    echo "uv already installed for ${CI_USER}"
+else
+    echo "Installing uv for ${CI_USER}"
+    as_ci bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || true
+    if ! uv_runnable; then
+        echo "Standalone uv not runnable; falling back to pip (expected on ARMv6)"
+        apt-get install -y python3-pip
+        # --break-system-packages is required on bookworm+ but unknown to older pip (bullseye).
+        as_ci pip install --user --break-system-packages uv || as_ci pip install --user uv
+    fi
+fi
+
+echo
+uv_runnable || { echo "ERROR: uv not runnable for ${CI_USER}" >&2; exit 1; }
+echo "Ready: $(as_ci "${UV}" --version)"
+echo "Target ${CI_USER}@$(hostname) is ready for SSH from the orchestrator."
