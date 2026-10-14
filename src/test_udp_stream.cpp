@@ -113,6 +113,22 @@ TEST_F(UdpStreamTest, StereoAllocatesOneInterleavedBlock) {
     EXPECT_EQ(stream.stereo_buffer_len, 2U * WAVE_BATCH);
 }
 
+TEST_F(UdpStreamTest, MonoSendBufferFitsDatagram) {
+    ASSERT_TRUE(udp_stream_init(&stream, MM_MONO, WAVE_BATCH * sizeof(float)));
+    int sndbuf = 0;
+    socklen_t optlen = sizeof(sndbuf);
+    ASSERT_EQ(getsockopt(stream.send_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &optlen), 0);
+    EXPECT_GE(sndbuf, WAVE_BATCH * static_cast<int>(sizeof(float)));
+}
+
+TEST_F(UdpStreamTest, StereoSendBufferFitsDatagram) {
+    ASSERT_TRUE(udp_stream_init(&stream, MM_STEREO, WAVE_BATCH * sizeof(float)));
+    int sndbuf = 0;
+    socklen_t optlen = sizeof(sndbuf);
+    ASSERT_EQ(getsockopt(stream.send_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &optlen), 0);
+    EXPECT_GE(sndbuf, 2 * WAVE_BATCH * static_cast<int>(sizeof(float)));
+}
+
 TEST_F(UdpStreamTest, MonoBlockPreservesEveryByte) {
     const size_t count = WAVE_BATCH;
     std::unique_ptr<float[]> samples(new float[count]);

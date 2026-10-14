@@ -80,6 +80,17 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes) {
         return false;
     }
 
+    // Ensure the socket can queue one complete datagram, especially on macOS,
+    // where the default send buffer can be smaller than a stereo NFM packet.
+    const int datagram_bytes = static_cast<int>(mode == MM_STEREO ? 2 * len_bytes : len_bytes);
+    int sndbuf = 0;
+    socklen_t optlen = sizeof(sndbuf);
+    if (getsockopt(sdata->send_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &optlen) == 0 && sndbuf < datagram_bytes) {
+        if (setsockopt(sdata->send_socket, SOL_SOCKET, SO_SNDBUF, &datagram_bytes, sizeof(datagram_bytes)) == -1) {
+            log(LOG_WARNING, "udp_stream: could not raise send buffer to %d bytes: %s\n", datagram_bytes, strerror(errno));
+        }
+    }
+
     log(LOG_INFO, "udp_stream: sending %s 32-bit float at %d Hz to %s:%s\n", mode == MM_MONO ? "Mono" : "Stereo", WAVE_RATE, sdata->dest_address, sdata->dest_port);
     return true;
 }
