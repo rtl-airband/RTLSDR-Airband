@@ -110,6 +110,7 @@ This keeps all fixture and output I/O off the SD card. The `ubuntu-22.04-arm` ru
 | `test_multichannel.py` | Two simultaneous AM channels each produce independent audio |
 | `test_nfm.py` | NFM demodulation produces correct-duration audio (NFM binary only) |
 | `test_scan.py` | Scan mode stitches audio from two frequencies with a noise gap in between |
+| `test_stats_update_interval.py` | `stats_update_interval` sets how often the stats file is rewritten; non-positive values are rejected |
 | `test_user_provided.py` | Dynamically generated tests from JSON files in `system_tests/user_provided/` |
 
 ## Adding User-Defined Tests
