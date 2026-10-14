@@ -362,6 +362,7 @@ extern bool use_localtime;
 extern bool multiple_demod_threads;
 extern bool multiple_output_threads;
 extern char* stats_filepath;
+extern double stats_update_interval;
 extern double global_split_min_file_time;
 extern double global_split_max_file_time;
 extern double global_split_max_idle_time;

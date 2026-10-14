@@ -214,6 +214,16 @@ TEST_F(HelperFunctionsTest, valid_split_file_times_idle_not_positive) {
     EXPECT_FALSE(valid_split_file_times(1.0, 60.0, -1.0));
 }
 
+TEST_F(HelperFunctionsTest, valid_stats_update_interval_positive) {
+    EXPECT_TRUE(valid_stats_update_interval(15.0));
+    EXPECT_TRUE(valid_stats_update_interval(0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_stats_update_interval_not_positive) {
+    EXPECT_FALSE(valid_stats_update_interval(0.0));
+    EXPECT_FALSE(valid_stats_update_interval(-1.0));
+}
+
 TEST_F(HelperFunctionsTest, setting_as_double_int) {
     libconfig::Config config;
     libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeInt);
