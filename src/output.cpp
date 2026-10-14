@@ -462,7 +462,7 @@ static bool close_if_necessary(output_t* output, bool reopening) {
                 // AND filenames include transmission start times, AND the caller intends to open a
                 // new file if this one is closed, then perform a first split rename
                 if (timercmp(&fdata->file_open_time, &fdata->transmission_start_time, ==) && fdata->split_include_transmission_start && reopening) {
-                    std::string new_filepath = build_output_filename(fdata, true);
+                    const std::string new_filepath = build_output_filename(fdata, true);
                     if (new_filepath.empty()) {
                         log(LOG_NOTICE, "failed to generate an output filename for a first split rename\n");
                     } else {
@@ -482,9 +482,9 @@ static bool close_if_necessary(output_t* output, bool reopening) {
     // need to use localtime if enabled (some timezones have partial hour offsets)
     struct tm tmp_tm;
     file_time(&(fdata->file_open_time.tv_sec), &tmp_tm);
-    int start_hour = tmp_tm.tm_hour;
+    const int start_hour = tmp_tm.tm_hour;
     file_time(&(current_time.tv_sec), &tmp_tm);
-    int current_hour = tmp_tm.tm_hour;
+    const int current_hour = tmp_tm.tm_hour;
 
     if (start_hour != current_hour) {
         debug_print("closing file %s after crossing hour boundary\n", fdata->file_path.c_str());
@@ -508,7 +508,7 @@ static bool output_file_ready(channel_t* channel, output_t* output) {
     }
 
     // check if an open file needs to be closed, and if it is, if it was a split transmission closed due to max time
-    bool closed_due_to_max_time = close_if_necessary(output, true);
+    const bool closed_due_to_max_time = close_if_necessary(output, true);
 
     // if the output file is still open, nothing else to do
     if (fdata->f) {
@@ -538,10 +538,10 @@ static bool output_file_ready(channel_t* channel, output_t* output) {
     // we can know if this is a 2nd or later split of a transmission but can't know if
     // this is the 1st file of a transmission that will later be split (eg part 1 will be
     // renamed in close_if_necessary when its transmission continues)
-    bool include_tx_time = fdata->split_include_transmission_start && closed_due_to_max_time;
+    const bool include_tx_time = fdata->split_include_transmission_start && closed_due_to_max_time;
 
     // build output filename and a tmp version
-    std::string output_filename = build_output_filename(fdata, include_tx_time);
+    const std::string output_filename = build_output_filename(fdata, include_tx_time);
     if (output_filename.empty()) {
         log(LOG_NOTICE, "failed to generate an output filename\n");
         return false;
