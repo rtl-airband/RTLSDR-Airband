@@ -84,6 +84,7 @@ bool multiple_demod_threads = false;
 bool multiple_output_threads = false;
 bool log_scan_activity = false;
 char* stats_filepath = NULL;
+double stats_update_interval = 15.0;
 double global_split_min_file_time = 1.0;
 double global_split_max_file_time = 60.0 * 60.0;
 double global_split_max_idle_time = 0.5;
@@ -859,6 +860,13 @@ int main(int argc, char* argv[]) {
             log_scan_activity = true;
         if (root.exists("stats_filepath"))
             stats_filepath = strdup(root["stats_filepath"]);
+        parse_global_double(root, "stats_update_interval", &stats_update_interval);
+        if (!valid_stats_update_interval(stats_update_interval)) {
+            cerr << "Configuration error: stats_update_interval must be greater than 0\n";
+            error();
+        }
+        if (root.exists("stats_update_interval") && !stats_filepath)
+            cerr << "Warning: stats_update_interval is ignored without stats_filepath\n";
         parse_global_double(root, "split_min_file_time", &global_split_min_file_time);
         parse_global_double(root, "split_max_file_time", &global_split_max_file_time);
         parse_global_double(root, "split_max_idle_time", &global_split_max_idle_time);

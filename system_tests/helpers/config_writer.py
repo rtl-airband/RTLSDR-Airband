@@ -83,6 +83,7 @@ def write_config(
     mixers: list[dict] | None = None,
     mp3_tmp_dir: Path | None = None,
     stats_filepath: Path | None = None,
+    stats_update_interval: float | None = None,
     split_times: dict | None = None,
 ) -> None:
     """
@@ -124,6 +125,8 @@ def write_config(
             to find and validate the resulting file.
         stats_filepath: If provided, rtl_airband writes a Prometheus-format stats
             file to this path on shutdown.
+        stats_update_interval: If provided, how often (seconds) the stats file
+            is rewritten while running.
         split_times: If provided, top-level split settings written as global
             config keys (split_min_file_time / split_max_file_time /
             split_max_idle_time / split_include_transmission_start).
@@ -202,5 +205,7 @@ def write_config(
 
     if stats_filepath is not None:
         lines.append(f'stats_filepath = "{stats_filepath}";')
+    if stats_update_interval is not None:
+        lines.append(f"stats_update_interval = {stats_update_interval};")
 
     config_path.write_text("\n".join(lines) + "\n")

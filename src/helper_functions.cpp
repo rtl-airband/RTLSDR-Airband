@@ -104,6 +104,10 @@ bool valid_split_file_times(double split_min_file_time, double split_max_file_ti
     return (split_min_file_time >= 1.0) && (split_max_file_time > split_min_file_time) && (split_max_idle_time > 0.0);
 }
 
+bool valid_stats_update_interval(double stats_update_interval) {
+    return stats_update_interval > 0.0;
+}
+
 bool setting_as_double(const libconfig::Setting& setting, double* value) {
     switch (setting.getType()) {
         case libconfig::Setting::TypeFloat:

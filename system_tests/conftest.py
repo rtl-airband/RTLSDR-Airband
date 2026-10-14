@@ -376,6 +376,17 @@ def speedup_factor(request: pytest.FixtureRequest) -> float:
 # ---------------------------------------------------------------------------
 
 
+def rtl_airband_cmd(binary: Path, config_path: Path) -> list[str]:
+    """Command line run_rtl_airband uses, for tests that manage the process themselves."""
+    return (["sudo"] if _use_sudo else []) + [
+        str(binary),
+        "-F",
+        "-e",
+        "-c",
+        str(config_path),
+    ]
+
+
 def run_rtl_airband(
     binary: Path,
     config_path: Path,
@@ -388,13 +399,7 @@ def run_rtl_airband(
     Captures stdout and stderr. On timeout, re-raises with captured stderr.
     With check, asserts returncode == 0, including stderr in the assertion message.
     """
-    cmd = (["sudo"] if _use_sudo else []) + [
-        str(binary),
-        "-F",
-        "-e",
-        "-c",
-        str(config_path),
-    ]
+    cmd = rtl_airband_cmd(binary, config_path)
     try:
         result = subprocess.run(
             cmd,
