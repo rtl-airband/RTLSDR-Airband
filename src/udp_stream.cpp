@@ -38,7 +38,6 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes) {
     }
 
     sdata->send_socket = -1;
-    sdata->dest_sockaddr_len = 0;
 
     // lookup address / port
     struct addrinfo hints, *result, *rptr;
@@ -68,8 +67,6 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes) {
             continue;
         }
 
-        sdata->dest_sockaddr = *rptr->ai_addr;
-        sdata->dest_sockaddr_len = rptr->ai_addrlen;
         break;
     }
     freeaddrinfo(result);
@@ -97,8 +94,10 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes) {
 
 void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len_bytes) {
     if (sdata->send_socket != -1) {
-        // Send without blocking or checking for success
-        sendto(sdata->send_socket, data, len_bytes, MSG_DONTWAIT | MSG_NOSIGNAL, &sdata->dest_sockaddr, sdata->dest_sockaddr_len);
+        // The socket is connected during initialization, so use its peer.
+        // sendto() with an explicit destination on a connected socket fails
+        // with EISCONN on macOS.
+        send(sdata->send_socket, data, len_bytes, MSG_DONTWAIT | MSG_NOSIGNAL);
     }
 }
 

@@ -158,8 +158,6 @@ struct udp_stream_data {
     const char* dest_port;
 
     int send_socket;
-    struct sockaddr dest_sockaddr;
-    socklen_t dest_sockaddr_len;
 };
 
 #ifdef WITH_PULSEAUDIO
