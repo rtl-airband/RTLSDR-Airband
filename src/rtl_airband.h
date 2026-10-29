@@ -129,6 +129,8 @@ struct icecast_data {
     shout_t* shout;
 };
 
+struct freq_t;
+
 struct file_data {
     // set once by config
     enum output_type type;
@@ -144,12 +146,14 @@ struct file_data {
     double split_max_file_time;
     double split_max_idle_time;
     bool split_include_transmission_start;
+    double split_tx_drop_shorter_than;
 
     // set per output file
     timeval transmission_start_time;
     timeval file_open_time;
     timeval last_write_time;
     int frequency;
+    freq_t* freq;  // channel frequency the file was opened on (scan mode can retune before it closes)
     std::string file_path;
     std::string file_path_tmp;
     FILE* f;
@@ -256,6 +260,7 @@ struct freq_t {
     NotchFilter notch_filter;      // notch filter - good to remove CTCSS tones
     LowpassFilter lowpass_filter;  // lowpass filter, applied to I/Q after derotation, set at bandwidth/2 to remove out of band noise
     enum modulations modulation;
+    size_t split_tx_dropped_count;  // transmissions dropped for being shorter than split_tx_drop_shorter_than
 };
 struct channel_t {
     float wavein[WAVE_LEN];      // FFT output waveform
@@ -371,6 +376,7 @@ extern double global_split_min_file_time;
 extern double global_split_max_file_time;
 extern double global_split_max_idle_time;
 extern bool global_split_include_transmission_start;
+extern double global_split_tx_drop_shorter_than;
 extern size_t fft_size, fft_size_log;
 extern int device_count, mixer_count;
 extern int shout_metadata_delay;
