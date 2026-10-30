@@ -108,6 +108,17 @@ bool valid_stats_update_interval(double stats_update_interval) {
     return stats_update_interval > 0.0;
 }
 
+const char* const split_tx_drop_shorter_than_constraint = "invalid split_tx_drop_shorter_than (need 0 (disabled) <= split_tx_drop_shorter_than < split_max_file_time)";
+
+bool valid_split_tx_drop_shorter_than(double split_tx_drop_shorter_than, double split_max_file_time) {
+    return split_tx_drop_shorter_than >= 0.0 && split_tx_drop_shorter_than < split_max_file_time;
+}
+
+// only a transmission that is the first split can be dropped
+bool should_drop_split_tx(bool first_file, bool continues, double tx_span_sec, double split_tx_drop_shorter_than) {
+    return first_file && !continues && tx_span_sec < split_tx_drop_shorter_than;
+}
+
 bool setting_as_double(const libconfig::Setting& setting, double* value) {
     switch (setting.getType()) {
         case libconfig::Setting::TypeFloat:

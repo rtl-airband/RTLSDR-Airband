@@ -40,6 +40,9 @@ bool should_close_split_file_idle(double duration_sec, double idle_sec, double s
 bool valid_split_file_times(double split_min_file_time, double split_max_file_time, double split_max_idle_time);
 extern const char* const split_file_times_constraint;
 bool valid_stats_update_interval(double stats_update_interval);
+bool valid_split_tx_drop_shorter_than(double split_tx_drop_shorter_than, double split_max_file_time);
+extern const char* const split_tx_drop_shorter_than_constraint;
+bool should_drop_split_tx(bool first_file, bool continues, double tx_span_sec, double split_tx_drop_shorter_than);
 bool setting_as_double(const libconfig::Setting& setting, double* value);
 bool setting_as_double_or(const libconfig::Setting& parent, const char* key, double fallback, double* value);
 bool setting_as_bool_or(const libconfig::Setting& parent, const char* key, bool fallback, bool* value);

@@ -89,6 +89,7 @@ double global_split_min_file_time = 1.0;
 double global_split_max_file_time = 60.0 * 60.0;
 double global_split_max_idle_time = 0.5;
 bool global_split_include_transmission_start = false;
+double global_split_tx_drop_shorter_than = 0.0;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
 
@@ -876,6 +877,11 @@ int main(int argc, char* argv[]) {
         }
         if (!setting_as_bool_or(root, "split_include_transmission_start", global_split_include_transmission_start, &global_split_include_transmission_start)) {
             cerr << "Configuration error: split_include_transmission_start must be a boolean\n";
+            error();
+        }
+        parse_global_double(root, "split_tx_drop_shorter_than", &global_split_tx_drop_shorter_than);
+        if (!valid_split_tx_drop_shorter_than(global_split_tx_drop_shorter_than, global_split_max_file_time)) {
+            cerr << "Configuration error: " << split_tx_drop_shorter_than_constraint << "\n";
             error();
         }
 #ifdef NFM

@@ -336,3 +336,43 @@ TEST_F(HelperFunctionsTest, setting_as_bool_or_rejects_non_bool) {
     EXPECT_FALSE(setting_as_bool_or(config.getRoot(), "int_value", false, &value));
     EXPECT_FALSE(setting_as_bool_or(config.getRoot(), "string_value", false, &value));
 }
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_disabled) {
+    EXPECT_TRUE(valid_split_tx_drop_shorter_than(0.0, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_below_max) {
+    EXPECT_TRUE(valid_split_tx_drop_shorter_than(59.9, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_at_max) {
+    EXPECT_FALSE(valid_split_tx_drop_shorter_than(60.0, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_negative) {
+    EXPECT_FALSE(valid_split_tx_drop_shorter_than(-0.1, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_short_whole_transmission) {
+    EXPECT_TRUE(should_drop_split_tx(true, false, 0.4, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_span_at_limit) {
+    EXPECT_FALSE(should_drop_split_tx(true, false, 1.0, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_long_transmission) {
+    EXPECT_FALSE(should_drop_split_tx(true, false, 3.0, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_disabled) {
+    EXPECT_FALSE(should_drop_split_tx(true, false, 0.0, 0.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_keeps_first_part_that_continues) {
+    EXPECT_FALSE(should_drop_split_tx(true, true, 0.4, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_keeps_short_later_part) {
+    EXPECT_FALSE(should_drop_split_tx(false, false, 0.4, 1.0));
+}
