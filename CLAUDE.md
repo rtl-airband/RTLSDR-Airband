@@ -11,9 +11,12 @@ Remotes to expect:
 
 | Remote | Repo | Role |
 |---|---|---|
-| `origin` | `jschmall/RTLSDR-Airband` | This fork |
+| `origin` | `jschmall/RTLSDR-Airband` (canonical, self-hosted) | This fork; push here |
+| `github` | `github.com/jschmall/RTLSDR-Airband` | Read-only push mirror of `origin` (local push URL disabled) |
 | `upstream` | `rtl-airband/RTLSDR-Airband` | Source of truth; rebase target |
 | `yegors` | `yegors/RTLSDR-Airband` | Reference only — source of the cherry-picked file-output features |
+
+**GitHub is a push mirror, not the working repo.** `origin` is the canonical repo; the GitHub copy is force-pushed from it on every push. Never push, merge a PR, or tag on GitHub: anything done there is overwritten at the next sync. To take a GitHub PR, fetch its branch, merge it into `origin`, and let the mirror carry it back.
 
 **The value of this fork is that it stays close to upstream and remains easy to rebase.**
 Keep the local delta small and well understood.
@@ -1004,6 +1007,13 @@ never be used here — the README's fork-version badge reads `origin`'s tags and
 start reporting upstream's release as this fork's. `scripts/find_version` (and therefore
 `rtl_airband -v`) reports `git describe` against whichever tag is nearest in local history, so it
 can name an upstream tag on an untagged working tree; that's expected, not drift.
+
+`origin` mirrors to GitHub, and the mirror copies **every** tag on `origin`, so an upstream tag pushed to
+`origin` by mistake lands on GitHub (and in the badge) within seconds. If that happens, delete it from
+`origin` (`git push origin --delete refs/tags/<tag>`) and force a mirror sync. Tag and branch
+*deletions* don't trigger a sync on their own; they otherwise reach GitHub only at the next scheduled
+sync (up to 8h). The fork's own tags on `origin` are exactly: `v5.5.0`, `v6.3.0`, `v6.3.1`, `v6.4.0`,
+`v6.5.0`, plus any created since.
 
 `CHANGELOG.md` is fork-only (upstream has none) and is **not** currently kept in sync — it stops
 at 2026-07-23 and predates fork-delta items 27-42 entirely. Treat this file's numbered fork-delta
