@@ -4,6 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Working Norms
 
+- **Never commit directly to `main`.** Check `git branch --show-current` before committing; if it is `main`, create a branch first. All changes reach `main` through a pull request. Name branches `<prefix>/<short_description>`, where the prefix is the contributor's GitHub username or a category such as `dev` or `fix` (e.g. `dev/drop_macos14_ci`).
 - **Keep this file updated** as changes are made to the codebase.
 - **Never guess or make assumptions** — ask clarifying questions when requirements are unclear.
 - **All code changes should include unit tests.** When possible, write tests first and implement code to make them pass (TDD).
@@ -89,7 +90,7 @@ docker buildx build --platform linux/arm/v6 --load -t rtlsdr-airband:armv6 .
 
 ## Code Formatting and Pre-commit
 
-Uses clang-format v14 with Chromium style (indent=4, column limit=200, config in `.clang-format`).
+Uses clang-format with Chromium style (indent=4, column limit=200, config in `.clang-format`). The version is pinned only in the `dev` group of `pyproject.toml` (locked in `uv.lock`); the pre-commit hook, the `code_formatting.yml` workflow, and VS Code all run that copy via `uv`, never a distro `clang-format-N`. The dependency is skipped on armv6l (no wheel), so the hook cannot run there. To change the version, edit the pin, run `uv lock`, then `pre-commit run clang-format --all-files`.
 
 ```bash
 # Install pre-commit hooks (once, after cloning)
@@ -99,12 +100,12 @@ pre-commit install
 pre-commit run --all-files
 
 # Format C++ source files manually (also used by CI)
-./scripts/reformat_code
+pre-commit run clang-format --all-files
 ```
 
 Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 - YAML/JSON validity, trailing whitespace, EOF newlines, shebang permissions, large files, merge conflict markers, private keys
-- clang-format on all `src/*.cpp` and `src/*.h` files
+- clang-format on all C/C++ files under `src/`
 - shellcheck on all bash scripts (excluding `init.d/`)
 - black, isort, and pylint on all `system_tests/**/*.py` files
 - Build (AM and NFM) and C++ unit tests when `src/*.cpp`, `src/*.h`, or `CMakeLists.txt` are modified (`scripts/run_unit_tests`)
@@ -114,7 +115,7 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 
 Four workflows run checks on open pull requests (`.github/workflows/`); `platform_build.yml` skips fork PRs. All of them except `code_formatting.yml` also run on pushes to `main`, tags, `workflow_dispatch`, and a daily schedule; `code_formatting.yml` runs on PRs and daily. A fifth, `version_bump.yml`, runs after a PR is merged — see [Version Tagging](#version-tagging).
 
-**`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
+**`code_formatting.yml`** — runs `uvx pre-commit run clang-format --all-files` and fails if the hook reformats any file.
 
 **`ci_build.yml`** — builds and tests four configurations on Ubuntu (x86 and ARM) and macOS:
 ```bash
