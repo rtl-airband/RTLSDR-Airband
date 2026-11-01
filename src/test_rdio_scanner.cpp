@@ -53,10 +53,10 @@ map<string, string> as_map(const vector<pair<string, string>>& fields) {
 
 rdio_scanner_job make_job() {
     rdio_scanner_job job;
-    job.config.server = "10.0.50.36";
+    job.config.server = "rdio.example.invalid";
     job.config.port = 3000;
     job.config.use_tls = false;
-    job.config.api_key = "a9823e02-fe4e-4c91-b513-c809a032827e";
+    job.config.api_key = "00000000-0000-0000-0000-000000000000";
     job.config.system_id = -1;
     job.config.system_label = "";
     job.config.talkgroup_id = 10612;
@@ -84,7 +84,7 @@ TEST_F(RdioScannerTest, required_fields_always_present) {
     EXPECT_EQ(fields.at("audioType"), "audio/mpeg");
     EXPECT_EQ(fields.at("dateTime"), "1784894400");
     EXPECT_EQ(fields.at("frequency"), "154265000");
-    EXPECT_EQ(fields.at("key"), "a9823e02-fe4e-4c91-b513-c809a032827e");
+    EXPECT_EQ(fields.at("key"), "00000000-0000-0000-0000-000000000000");
     EXPECT_EQ(fields.at("source"), "0");
     EXPECT_EQ(fields.at("talkgroup"), "10612");
 }
