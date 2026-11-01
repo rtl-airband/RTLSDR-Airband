@@ -96,7 +96,7 @@ extern "C" void samplefft(sample_fft_arg* a, unsigned char* buffer, float* windo
 #define FFT_BATCH 1
 #endif /* WITH_BCM_VC */
 
-//#define AFC_LOGGING
+// #define AFC_LOGGING
 
 enum status { NO_SIGNAL = ' ', SIGNAL = '*', AFC_UP = '<', AFC_DOWN = '>' };
 enum ch_states { CH_DIRTY, CH_WORKING, CH_READY };

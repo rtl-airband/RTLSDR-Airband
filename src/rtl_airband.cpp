@@ -191,13 +191,9 @@ class AFC {
     const status _prev_axcindicate;
 
 #ifdef WITH_BCM_VC
-    float square(const GPU_FFT_COMPLEX* fft_results, size_t index) {
-        return fft_results[index].re * fft_results[index].re + fft_results[index].im * fft_results[index].im;
-    }
+    float square(const GPU_FFT_COMPLEX* fft_results, size_t index) { return fft_results[index].re * fft_results[index].re + fft_results[index].im * fft_results[index].im; }
 #else
-    float square(const fftwf_complex* fft_results, size_t index) {
-        return fft_results[index][0] * fft_results[index][0] + fft_results[index][1] * fft_results[index][1];
-    }
+    float square(const fftwf_complex* fft_results, size_t index) { return fft_results[index][0] * fft_results[index][0] + fft_results[index][1] * fft_results[index][1]; }
 #endif /* WITH_BCM_VC */
 
     template <class FFT_RESULTS, int STEP>

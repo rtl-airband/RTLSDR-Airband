@@ -16,10 +16,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v6
 
-    - name: Install Clang Format
-      run: sudo apt-get install clang-format-14
+    - name: Install uv
+      uses: astral-sh/setup-uv@v8.1.0
 
     - name: Run Clang Format
-      run: |
-        ./scripts/reformat_code
-        git diff --exit-code
+      run: uvx pre-commit run clang-format --all-files

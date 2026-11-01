@@ -13,12 +13,6 @@ repos:
     - id: check-case-conflict
     - id: detect-private-key
 
-- repo: https://github.com/pre-commit/mirrors-clang-format
-  rev: v14.0.6
-  hooks:
-  - id: clang-format
-    files: src/.*\.cpp|src/.*\.h
-
 - repo: https://github.com/shellcheck-py/shellcheck-py
   rev: v0.10.0.1
   hooks:
@@ -27,6 +21,12 @@ repos:
 
 - repo: local
   hooks:
+  - id: clang-format
+    name: clang-format (C++ formatter)
+    language: system
+    entry: uv run clang-format -i
+    files: ^src/.*\.(cpp|h|c)$
+
   - id: black
     name: black (Python formatter)
     language: system

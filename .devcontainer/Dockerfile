@@ -11,7 +11,6 @@ RUN DEBIAN_FRONTEND=noninteractive \
         git \
         sudo \
         gdb \
-        clang-format-14 \
         curl \
         python3-pip \
         pre-commit \
