@@ -20,3 +20,6 @@ system_tests/test_cases/
 
 # Claude Code - personal overrides
 .claude/settings.local.json
+
+# Machine-specific Claude Code notes (deployment details; never commit)
+CLAUDE.local.md

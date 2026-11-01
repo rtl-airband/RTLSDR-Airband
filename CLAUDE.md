@@ -1139,36 +1139,22 @@ send-side pacing code; confirm with a wire capture first.
 
 ## Deployment Context
 
-- Builds happen on the `rtlsdr-airband` host (`10.0.50.31`), which also runs roughly a dozen
-  concurrent `rtl_airband` instances — one per SDR, each with its own `~/rtl_<centerfreq>.conf`,
-  invoked as `rtl_airband -FeQ -c <config>`.
-- `sudo make install` places the binary at `/usr/local/bin/rtl_airband`, which is where the running
-  units expect it. All instances pick up a new binary on their next restart; restart them one at a
-  time and confirm each comes back clean.
-- `rtl_airband -v` prints a git hash rather than a semantic version on this fork. That is expected —
-  there are no release tags here.
-- Audio consumers live on the `dsp` host (`10.0.50.30`) — Liquidsoap 2.4.0 (installed via opam)
-  feeding Broadcastify. Same VLAN as the SDR host, direct L2, no firewall in the path.
-- Per-instance channel configs live outside this repo and are not committed. Paste them into a
-  session when they are relevant rather than adding them here.
+Deployment-specific notes (build/SDR host, audio consumers, addresses, per-instance setup) live in
+`CLAUDE.local.md`, which is gitignored. Keep anything that identifies the production network there,
+not here: this repo is public.
+
+General lessons that apply to any deployment:
+
+- `sudo make install` places the binary at `/usr/local/bin/rtl_airband`. Running instances pick up
+  a new binary on their next restart; restart them one at a time and confirm each comes back clean.
+- `rtl_airband -v` can print a git hash rather than a semantic version on untagged builds; that is expected.
+- Per-instance channel configs live outside this repo and are not committed.
 - Once an instance's config sets `control_socket_path` (`dynamic_reload`, item 27), its systemd
-  unit must set `User=`/`Group=` to a non-root service account — the control socket's
-  `SO_PEERCRED` check rejects any client whose UID doesn't match the daemon's own, so a
-  root-run daemon can only be controlled by root-run tooling.
-- **That non-root service account also needs USB device permissions it doesn't get for free.**
-  Hit this in production 2026-08-06: the `rtl_042` instance (RTL-SDR Blog V4, `serial = "17"`)
-  was switched to `User=`/`Group=` to enable `control_socket_path` and immediately started
-  failing every restart with `RTLSDR device with serial number 17 not found`, despite the
-  device being present and working fine via `rtl_test` and previously via a root-run daemon.
-  Root cause: every prior instance on this host had always run as root (via `sudo`), which
-  bypasses USB device permissions entirely; the new non-root account was never added to
-  `plugdev`, the group `librtlsdr2`'s own udev rule (`/lib/udev/rules.d/60-librtlsdr2.rules`)
-  grants device access to. Fixed with `sudo usermod -aG plugdev <service-account>` +
-  restarting the unit — no code change, no udev rule change, one-time per host (group
-  membership, not per-service). Symptom is confusingly generic ("not found", not "permission
-  denied") because `rtlsdr_find_device_by_serial()` (`src/input-rtlsdr.cpp`) silently discards
-  the return code of `rtlsdr_get_device_usb_strings()` — a real robustness gap in that
-  function, pre-existing (not introduced by `dynamic_reload`), not yet fixed; a future fix
-  should log/surface a permission failure there distinctly from a genuine no-match. Documented
-  in `init.d/rtl_airband.service` so this isn't rediscovered the hard way on the next
-  control-socket rollout.
+  unit must set `User=`/`Group=` to a non-root service account (the control socket's `SO_PEERCRED`
+  check rejects clients whose UID differs from the daemon's).
+- **That non-root account also needs USB device access**: add it to `plugdev`
+  (`sudo usermod -aG plugdev <service-account>`), the group librtlsdr's udev rule grants access to.
+  Without it the failure is a misleading `RTLSDR device with serial number N not found`, because
+  `rtlsdr_find_device_by_serial()` (`src/input-rtlsdr.cpp`) discards the return code of
+  `rtlsdr_get_device_usb_strings()`, a known robustness gap not yet fixed. Also documented in
+  `init.d/rtl_airband.service`.
