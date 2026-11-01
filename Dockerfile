@@ -33,13 +33,6 @@ RUN git clone --depth 1 https://github.com/rtlsdrblog/rtl-sdr-blog && \
     cmake --build rtl-sdr-blog/build -j4 && \
     cmake --install rtl-sdr-blog/build
 
-# compile / install libmirisdr-4
-RUN git clone --depth 1 https://github.com/f4exb/libmirisdr-4 && \
-    git -C libmirisdr-4 log -1 --format='libmirisdr-4 checked out: %H (%ci)' && \
-    cmake -S libmirisdr-4 -B libmirisdr-4/build -DCMAKE_INSTALL_PREFIX=/usr && \
-    cmake --build libmirisdr-4/build -j4 && \
-    cmake --install libmirisdr-4/build
-
 # compile / install the SoapySDR airspy driver module. SoapySDR itself comes from the
 # soapy-sdr-dev package; its device modules are not packaged for Alpine.
 RUN git clone --depth 1 https://github.com/pothosware/SoapyAirspy && \
@@ -80,9 +73,8 @@ RUN apk add --no-cache \
     soapy-sdr \
     airspyone-host-libs
 
-# copy (from build container) the source-built SDR libraries and the airspy Soapy module
+# copy (from build container) the source-built rtl-sdr library and the airspy Soapy module
 COPY --from=build /usr/lib/librtlsdr.so* /usr/lib/
-COPY --from=build /usr/lib/libmirisdr.so* /usr/lib/
 COPY --from=build /usr/lib/SoapySDR/modules0.8/libairspySupport.so /usr/lib/SoapySDR/modules0.8/
 
 # blacklist the in-kernel DVB drivers so rtl-sdr can claim the device

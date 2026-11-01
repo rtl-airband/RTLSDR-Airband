@@ -29,8 +29,8 @@ apt-get update -y
 apt-get install -y rsync git curl
 
 # Pre-install all build dependencies now so CI can skip install_dependencies on
-# this persistent runner — removes the per-run libmirisdr rebuild (slow on ARMv6)
-# and the deps sudo. Re-run this script when .github/install_dependencies changes.
+# this persistent runner — removes the per-run deps install and its sudo.
+# Re-run this script when .github/install_dependencies changes.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPS_TMP="$(mktemp -d)"
 ( cd "${DEPS_TMP}" && "${SCRIPT_DIR}/install_dependencies" )
