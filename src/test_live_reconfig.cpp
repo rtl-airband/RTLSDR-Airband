@@ -1619,6 +1619,136 @@ TEST_F(DiffApplyTest, correction_applied_via_input_set_correction_is_reported) {
     EXPECT_NE(result.applied[0].find("correction -> 80"), std::string::npos);
 }
 
+namespace {
+int auto_ppm_fake_set_calls = 0;
+int auto_ppm_fake_set_correction(input_t* const, int const) {
+    auto_ppm_fake_set_calls++;
+    return 0;
+}
+}  // namespace
+
+class AutoPpmDiffTest : public DiffApplyTest {
+   protected:
+    void SetUp() override {
+        DiffApplyTest::SetUp();
+        auto_ppm_fake_set_calls = 0;
+        input.driver_type = "rtlsdr";
+        input.sample_rate = 2000000;
+        input.centerfreq = 120000000;
+        input.state = INPUT_RUNNING;
+        input.set_correction = &auto_ppm_fake_set_correction;
+        input.dev_data = &fake_dev_data;
+        dev.input = &input;
+        dev.mode = R_MULTICHANNEL;
+        dev.channel_count = 0;
+        devices = &dev;
+        device_count = 1;
+
+        dsnap.type = "rtlsdr";
+        dsnap.mode = R_MULTICHANNEL;
+        dsnap.channel_count = 0;
+        dsnap.centerfreq = 120000000;
+        dsnap.sample_rate = 2000000;
+        dsnap.has_correction = true;
+        dsnap.correction = 4;
+        dsnap.has_auto_ppm = true;
+        dsnap.auto_ppm = true;
+    }
+    void TearDown() override {
+        delete dev.auto_ppm;
+        DiffApplyTest::TearDown();
+    }
+    DiffResult run() {
+        ConfigSnapshot snapshot;
+        snapshot.devices.push_back(dsnap);
+        return compute_and_apply_diff(snapshot);
+    }
+    void configure_auto_ppm(bool enabled) {
+        dev.auto_ppm = new auto_ppm_device();
+        dev.auto_ppm->enabled = enabled;
+        dev.auto_ppm->state.base_correction = 4;
+    }
+    int fake_dev_data = 0;
+    input_t input{};
+    device_t dev{};
+    DeviceConfigSnapshot dsnap;
+};
+
+TEST_F(AutoPpmDiffTest, unchanged_correction_is_left_to_auto_ppm) {
+    configure_auto_ppm(true);
+    DiffResult result = run();
+    EXPECT_EQ(auto_ppm_fake_set_calls, 0);
+    ASSERT_EQ(result.applied.size(), 1u);
+    EXPECT_NE(result.applied[0].find("left to auto_ppm"), std::string::npos);
+    EXPECT_TRUE(result.skipped_requires_restart.empty());
+}
+
+TEST_F(AutoPpmDiffTest, changed_correction_is_applied_as_the_new_base) {
+    configure_auto_ppm(true);
+    dsnap.correction = 9;
+    DiffResult result = run();
+    EXPECT_EQ(auto_ppm_fake_set_calls, 1);
+    EXPECT_EQ(dev.auto_ppm->state.base_correction, 9);
+    ASSERT_EQ(result.applied.size(), 1u);
+    EXPECT_NE(result.applied[0].find("correction -> 9"), std::string::npos);
+}
+
+TEST_F(AutoPpmDiffTest, turning_auto_ppm_off_reapplies_the_config_correction) {
+    configure_auto_ppm(true);
+    dsnap.auto_ppm = false;
+    DiffResult result = run();
+    EXPECT_FALSE(dev.auto_ppm->enabled);
+    EXPECT_EQ(auto_ppm_fake_set_calls, 1);
+    ASSERT_EQ(result.applied.size(), 2u);
+    EXPECT_NE(result.applied[0].find("auto_ppm -> false"), std::string::npos);
+    EXPECT_NE(result.applied[1].find("correction -> 4"), std::string::npos);
+}
+
+TEST_F(AutoPpmDiffTest, enabling_auto_ppm_live_needs_it_configured_at_startup) {
+    DiffResult result = run();
+    ASSERT_EQ(result.skipped_requires_restart.size(), 1u);
+    EXPECT_NE(result.skipped_requires_restart[0].find("auto_ppm"), std::string::npos);
+}
+
+TEST_F(AutoPpmDiffTest, changed_parameters_need_a_restart) {
+    configure_auto_ppm(true);
+    dsnap.auto_ppm_params.max_step = 2;
+    DiffResult result = run();
+    ASSERT_EQ(result.skipped_requires_restart.size(), 1u);
+    EXPECT_NE(result.skipped_requires_restart[0].find("auto_ppm_max_step"), std::string::npos);
+    EXPECT_EQ(dev.auto_ppm->params.max_step, 5);
+}
+
+TEST_F(AutoPpmDiffTest, correction_outside_the_limit_is_not_applied) {
+    configure_auto_ppm(true);
+    dsnap.correction = 150;
+    DiffResult result = run();
+    EXPECT_EQ(auto_ppm_fake_set_calls, 0);
+    ASSERT_EQ(result.skipped_requires_restart.size(), 1u);
+    EXPECT_NE(result.skipped_requires_restart[0].find("outside auto_ppm_max_ppm"), std::string::npos);
+}
+
+TEST_F(ConfigSnapshotTest, auto_ppm_keys_are_captured) {
+    std::string path = write_config(R"(
+devices:
+({
+  type = "rtlsdr";
+  centerfreq = 120000000;
+  auto_ppm = true;
+  auto_ppm_max_ppm = 40;
+  channels: ( { freq = 120.100000; outputs: ( { type = "file"; directory = "/tmp"; filename_template = "x"; } ); } );
+});
+)");
+    ConfigSnapshot snapshot;
+    std::string error;
+    ASSERT_TRUE(parse_config_snapshot(path, &snapshot, &error)) << error;
+    ASSERT_EQ(snapshot.devices.size(), 1u);
+    EXPECT_TRUE(snapshot.devices[0].has_auto_ppm);
+    EXPECT_TRUE(snapshot.devices[0].auto_ppm);
+    EXPECT_EQ(snapshot.devices[0].auto_ppm_params.max_ppm, 40);
+    EXPECT_TRUE(snapshot.devices[0].auto_ppm_params_error.empty());
+}
+
 int fake_set_correction_fails(input_t* const, int const) {
     return -1;
 }

@@ -290,6 +290,7 @@ add_custom_command(
 add_library (rtl_airband_base OBJECT
 	config.cpp
 	control_socket.cpp
+	auto_ppm.cpp
 	device_stats.cpp
 	input-common.cpp
 	input-file.cpp
@@ -385,6 +386,7 @@ if(BUILD_UNITTESTS)
 		stats_http.cpp
 		live_reconfig.cpp
 		control_socket.cpp
+		auto_ppm.cpp
 		device_stats.cpp
 		input-common.cpp
 		config.cpp

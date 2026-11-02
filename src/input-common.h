@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include <atomic>
 #include <libconfig.h++>
+#include <mutex>
 
 #if __GNUC__ >= 4
 #define MODULE_EXPORT extern "C" __attribute__((visibility("default")))
@@ -62,6 +63,10 @@ struct input_t {
     // device) - does not affect input->state, unlike overflow/underrun which are informational
     // only. See input_set_centerfreq()'s comment (input-common.cpp).
     size_t centerfreq_retune_failure_count;
+    // Bumped after every successful centerfreq, correction or sample_rate change. Lets the
+    // per-frequency offset estimate used by auto_ppm (freq_t::ppm_offset_*) restart on fresh
+    // samples instead of averaging across the change.
+    std::atomic<uint32_t> tuning_generation;
     input_state_t state;
     sample_format_t sfmt;
     float fullscale;
@@ -81,9 +86,8 @@ struct input_t {
     int (*set_bandwidth)(input_t* const input, int const bandwidth);
     int (*set_correction)(input_t* const input, int const correction);
     int (*stop)(input_t* const input);
-    // Nullable. Called only from the control socket thread - the same thread that issues every
-    // live set_gain/set_bandwidth/set_correction - so the driver's dev_data fields it reads are
-    // never written concurrently.
+    // Nullable. Call it with input_control_mutex() held, the lock every live set_* goes through,
+    // so the driver's dev_data fields it reads are never written concurrently.
     int (*get_settings)(input_t* const input, input_settings_t* out);
     // ADC level measurements (device_stats.cpp). peak_level is the largest |I|/|Q| over the last
     // complete ~1 s window as a fraction of full scale, valid once peak_valid is set; written by
@@ -107,5 +111,13 @@ int input_set_gain(input_t* const input, float const gain);
 int input_set_bandwidth(input_t* const input, int const bandwidth);
 int input_set_correction(input_t* const input, int const correction);
 int input_stop(input_t* const input);
+
+// Serializes every live driver control call (input_set_centerfreq/gain/bandwidth/correction,
+// get_settings, a live sample_rate reopen) across the threads that issue them: control socket,
+// R_SCAN controller, demod (live retune) and auto_ppm. Process-wide rather than per device
+// because these calls are rare and a single function-local static needs no per-input setup,
+// which the hand-built input_t test fixtures would otherwise have to remember. Recursive so a
+// holder can call the input_set_* wrappers, which take it themselves.
+std::recursive_mutex& input_control_mutex();
 
 #endif /* _INPUT_COMMON_H */

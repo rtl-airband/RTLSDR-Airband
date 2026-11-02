@@ -24,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "auto_ppm.h"
 #include "rtl_airband.h"
 
 // Pure math, shared with config.cpp's parse-time setup so both paths agree by construction.
@@ -169,9 +170,9 @@ struct DeviceConfigSnapshot {
     int channel_count;
     int centerfreq;
     int sample_rate;
-    bool has_gain;  // false if "gain" is absent, or present as a non-numeric (per-element) form
-    float gain;
-    // Defaulted (unlike the other scalar fields above) so existing hand-built DeviceConfigSnapshot
+    bool has_gain = false;  // false if "gain" is absent, or present as a non-numeric (per-element) form
+    float gain = 0.0f;
+    // Defaulted (unlike most of the scalar fields above) so existing hand-built DeviceConfigSnapshot
     // test fixtures that predate this field don't leave it as indeterminate garbage - a real
     // regression this exact addition hit: several pre-existing tests construct a bare
     // DeviceConfigSnapshot and only set the fields they care about.
@@ -179,6 +180,10 @@ struct DeviceConfigSnapshot {
     int bandwidth = 0;
     bool has_correction = false;  // false if "correction" is absent from the device's config block
     int correction = 0;
+    bool has_auto_ppm = false;  // false if "auto_ppm" is absent
+    bool auto_ppm = false;
+    AutoPpmParams auto_ppm_params;
+    std::string auto_ppm_params_error;  // non-empty when the auto_ppm_* values are out of range
     std::vector<bool> channel_enabled;  // size == channel_count
     // Per-channel canonical config signature (build_channel_identity_signature(), config.cpp),
     // built from the same raw Setting parse_channel() itself would see. compute_and_apply_diff()

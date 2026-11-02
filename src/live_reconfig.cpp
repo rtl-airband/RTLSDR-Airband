@@ -488,6 +488,9 @@ bool device_reopen_recoverable(device_t* dev, string* error_text) {
 
 bool device_apply_sample_rate(device_t* dev, int new_sample_rate) {
     input_t* input = dev->input;
+    // Held across the whole stop/reopen: the driver's dev_data->dev handle is closed and replaced
+    // in here, so no other thread may issue a control call against it meanwhile.
+    std::lock_guard<std::recursive_mutex> control(input_control_mutex());
     int old_sample_rate = input->sample_rate;
 
     // Compute and allocate the new buffer FIRST, before touching the RX thread at all - pure
@@ -525,6 +528,7 @@ bool device_apply_sample_rate(device_t* dev, int new_sample_rate) {
         input->bufs = input->bufe = 0;
         pthread_create(&input->rx_thread, NULL, input->run_rx_thread, input);
         recompute_channel_bins(dev, input->centerfreq, new_sample_rate);
+        input->tuning_generation.fetch_add(1, std::memory_order_release);
         return true;
     }
 
@@ -537,6 +541,7 @@ bool device_apply_sample_rate(device_t* dev, int new_sample_rate) {
 
     if (rolled_back) {
         pthread_create(&input->rx_thread, NULL, input->run_rx_thread, input);
+        input->tuning_generation.fetch_add(1, std::memory_order_release);
         // bins/dm_dphi are already correct for old_sample_rate - nothing about this device's
         // tuning actually changed, so no recompute is needed.
         return false;
@@ -734,6 +739,9 @@ bool parse_config_snapshot(const string& config_path, ConfigSnapshot* out, strin
         dev.bandwidth = dev.has_bandwidth ? snapshot_parse_anynum2int(devs[i]["bandwidth"]) : 0;
         dev.has_correction = devs[i].exists("correction");
         dev.correction = dev.has_correction ? snapshot_parse_anynum2int(devs[i]["correction"]) : 0;
+        dev.has_auto_ppm = devs[i].exists("auto_ppm");
+        dev.auto_ppm = dev.has_auto_ppm && (bool)devs[i]["auto_ppm"];
+        auto_ppm_parse_params(devs[i], &dev.auto_ppm_params, &dev.auto_ppm_params_error);
 
         dev.channel_enabled.clear();
         dev.channel_signature.clear();
@@ -923,7 +931,34 @@ DiffResult compute_and_apply_diff(const ConfigSnapshot& snapshot) {
                 }
             }
 
-            if (snap.has_correction) {
+            // While auto_ppm stays on, an unchanged config correction is left alone: reapplying it
+            // would throw away what auto_ppm has learned on every reload_diff.
+            bool apply_correction = true;
+            if (dev->auto_ppm == nullptr) {
+                if (snap.auto_ppm) {
+                    result.skipped_requires_restart.push_back(label + ": auto_ppm enabled in config, but the device started without it");
+                }
+            } else if (!snap.auto_ppm_params_error.empty()) {
+                result.skipped_requires_restart.push_back(label + ": auto_ppm not changed, " + snap.auto_ppm_params_error);
+                apply_correction = !auto_ppm_active(dev);
+            } else if (snap.auto_ppm && snap.has_correction && abs(snap.correction) > snap.auto_ppm_params.max_ppm) {
+                result.skipped_requires_restart.push_back(label + ": auto_ppm not changed, correction " + to_string(snap.correction) + " is outside auto_ppm_max_ppm");
+                apply_correction = false;
+            } else {
+                if (snap.auto_ppm_params != dev->auto_ppm->params) {
+                    result.skipped_requires_restart.push_back(label + ": auto_ppm_interval/auto_ppm_max_ppm/auto_ppm_max_step changed");
+                }
+                vector<string> changes;
+                apply_correction = auto_ppm_reload(dev, snap.auto_ppm, snap.correction, &changes);
+                for (const string& change : changes) {
+                    result.applied.push_back(label + ": " + change);
+                }
+                if (!apply_correction && snap.has_correction) {
+                    result.applied.push_back(label + ": correction unchanged in config, left to auto_ppm");
+                }
+            }
+
+            if (snap.has_correction && apply_correction) {
                 // Same pattern as bandwidth immediately above - no live-readable current value,
                 // reapplies unconditionally, input_set_correction() is synchronous so its return
                 // value is already the real outcome.

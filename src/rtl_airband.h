@@ -400,6 +400,14 @@ struct freq_t {
     // threads; meaningless until freq_offset_updates is non-zero.
     std::atomic<float> freq_offset_hz;
     std::atomic<uint32_t> freq_offset_updates;
+    // The same estimate restarted on every input_t::tuning_generation change, for auto_ppm
+    // (auto_ppm.cpp): freq_offset_hz above still carries pre-change samples. ppm_offset_updates
+    // is reset to 0 before ppm_offset_generation is published, so a reader that sees the current
+    // generation never pairs it with a stale count. ppm_settle_batches is demod-thread only.
+    std::atomic<float> ppm_offset_hz;
+    std::atomic<uint32_t> ppm_offset_updates;
+    std::atomic<uint32_t> ppm_offset_generation;
+    int ppm_settle_batches;
 };
 struct channel_t {
     float wavein[WAVE_LEN];      // FFT output waveform
@@ -415,9 +423,10 @@ struct channel_t {
 #endif                         /* NFM */
     uint32_t dm_dphi, dm_phi;  // derotation frequency and current phase value
     // Frequency offset estimator state (demod thread only): the previous raw bin output and this
-    // batch's power-weighted sum of z[n] * conj(z[n-1]) over squelch-open samples.
+    // batch's sum of freq_offset_step_cycles() over squelch-open samples.
     float fo_prev_re, fo_prev_im;
-    double fo_acc_re, fo_acc_im;
+    double fo_expected_cycles;  // freq_offset_expected_cycles() for this batch's frequency
+    double fo_step_sum;
     int fo_open_samples;
     enum mix_modes mode;  // mono or stereo
     // axcindicate, freq_idx, and state are each written by one thread (demod/mixer) and
@@ -557,6 +566,7 @@ struct device_t {
     std::atomic<bool> sample_rate_apply_failed;
     enum rec_modes mode;
     size_t output_overrun_count;
+    struct auto_ppm_device* auto_ppm;  // NULL unless the device block has an auto_ppm key (auto_ppm.h)
 };
 
 struct mixinput_t {

@@ -27,6 +27,7 @@
 #include <iostream>
 #include <libconfig.h++>
 #include <sstream>
+#include "auto_ppm.h"
 #include "helper_functions.h"
 #include "input-common.h"   // input_t
 #include "live_reconfig.h"  // compute_channel_bin, compute_channel_dm_dphi
@@ -1026,6 +1027,35 @@ int parse_devices(libconfig::Setting& devs) {
         assert(dev->input->fullscale > 0);
         assert(dev->input->bytes_per_sample > 0);
         assert(dev->input->sample_rate > WAVE_RATE);
+
+        dev->auto_ppm = NULL;
+        if (devs[i].exists("auto_ppm")) {
+            input_t* input = dev->input;
+            if (input->set_correction == NULL || input->get_settings == NULL) {
+                cerr << "Configuration error: devices.[" << i << "]: auto_ppm is not supported by the " << (input->driver_type ? input->driver_type : "?") << " driver\n";
+                error();
+            }
+            AutoPpmParams params;
+            string param_error;
+            if (!auto_ppm_parse_params(devs[i], &params, &param_error)) {
+                cerr << "Configuration error: devices.[" << i << "]: " << param_error << "\n";
+                error();
+            }
+            input_settings_t settings;
+            int start_correction = 0;
+            if (input->get_settings(input, &settings) == 0) {
+                start_correction = (int)lround(settings.correction);
+            }
+            if (abs(start_correction) > params.max_ppm) {
+                cerr << "Configuration error: devices.[" << i << "]: correction " << start_correction << " is outside auto_ppm_max_ppm (+/-" << params.max_ppm << ")\n";
+                error();
+            }
+            auto_ppm_device* ap = new auto_ppm_device();
+            ap->params = params;
+            ap->enabled = (bool)devs[i]["auto_ppm"];
+            ap->state.base_correction = start_correction;
+            dev->auto_ppm = ap;
+        }
 
         // Shared with live_reconfig.cpp's device_apply_sample_rate() so both paths agree by
         // construction - see compute_input_buf_size()'s declaration comment (live_reconfig.h).
