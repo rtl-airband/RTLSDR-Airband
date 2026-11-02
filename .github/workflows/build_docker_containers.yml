@@ -53,7 +53,7 @@ jobs:
         platform: ${{ matrix.platform }}
 
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: '0' # need full history to get version from git tag
 
