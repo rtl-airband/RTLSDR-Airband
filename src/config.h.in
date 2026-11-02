@@ -21,7 +21,6 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 #cmakedefine WITH_RTLSDR
-#cmakedefine WITH_MIRISDR
 #cmakedefine WITH_SOAPYSDR
 #cmakedefine WITH_PROFILING
 #cmakedefine WITH_PULSEAUDIO
