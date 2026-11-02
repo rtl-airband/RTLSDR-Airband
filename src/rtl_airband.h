@@ -108,7 +108,7 @@ extern "C" void samplefft(sample_fft_arg* a, unsigned char* buffer, float* windo
 #define FFT_BATCH 1
 #endif /* WITH_BCM_VC */
 
-//#define AFC_LOGGING
+// #define AFC_LOGGING
 
 enum status { NO_SIGNAL = ' ', SIGNAL = '*', AFC_UP = '<', AFC_DOWN = '>' };
 enum ch_states { CH_DIRTY, CH_WORKING, CH_READY };
@@ -197,6 +197,7 @@ struct rdio_scanner_job {
     int frequency;
 };
 #endif /* WITH_RDIO_SCANNER */
+struct freq_t;
 
 struct file_data {
     // set once by config
@@ -218,6 +219,7 @@ struct file_data {
 #ifdef WITH_RDIO_SCANNER
     rdio_scanner_data* rdio_scanner;  // NULL if not configured for this output
 #endif                                /* WITH_RDIO_SCANNER */
+    double split_tx_drop_shorter_than;
 
     // set per output file
     timeval transmission_start_time;
@@ -229,6 +231,7 @@ struct file_data {
 #endif /* WITH_RDIO_SCANNER */
     timeval last_write_time;
     int frequency;
+    freq_t* freq;  // channel frequency the file was opened on (scan mode can retune before it closes)
     std::string file_path;
     std::string file_path_tmp;
     FILE* f;
@@ -408,6 +411,7 @@ struct freq_t {
     std::atomic<uint32_t> ppm_offset_updates;
     std::atomic<uint32_t> ppm_offset_generation;
     int ppm_settle_batches;
+    size_t split_tx_dropped_count;  // transmissions dropped for being shorter than split_tx_drop_shorter_than
 };
 struct channel_t {
     float wavein[WAVE_LEN];      // FFT output waveform
@@ -718,6 +722,7 @@ extern char* cfgfile;
 extern int rdio_scanner_queue_depth;
 #endif /* WITH_RDIO_SCANNER */
 extern bool global_split_include_transmission_start;
+extern double global_split_tx_drop_shorter_than;
 extern size_t fft_size, fft_size_log;
 extern int device_count, mixer_count;
 extern int shout_metadata_delay;

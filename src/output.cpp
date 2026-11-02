@@ -394,7 +394,7 @@ static int open_file(file_data* fdata, mix_modes mixmode, int is_audio) {
     return 0;
 }
 
-static void close_file(output_t* output) {
+static void close_file(output_t* output, bool drop = false) {
     file_data* fdata = (file_data*)(output->data);
     if (!fdata) {
         return;
@@ -425,12 +425,15 @@ static void close_file(output_t* output) {
     if (fdata->f) {
         fclose(fdata->f);
         fdata->f = NULL;
-        bool keep = true;
-        if (fdata->split_on_transmission && fdata->min_rx_seconds > 0.0 && duration_sec < fdata->min_rx_seconds) {
-            keep = false;
+        if (!drop && fdata->split_on_transmission && fdata->min_rx_seconds > 0.0 && duration_sec < fdata->min_rx_seconds) {
+            drop = true;
         }
 
-        if (keep) {
+        if (drop) {
+            if (unlink(fdata->file_path_tmp.c_str()) < 0 && errno != ENOENT) {
+                log(LOG_ERR, "Could not delete %s: %s\n", fdata->file_path_tmp.c_str(), strerror(errno));
+            }
+        } else {
             rename_if_exists(fdata->file_path_tmp.c_str(), fdata->file_path.c_str());
             if (fdata->split_on_transmission && !fdata->post_write_script.empty()) {
                 pid_t pid = fork();
@@ -452,8 +455,6 @@ static void close_file(output_t* output) {
                 rdio_scanner_enqueue(fdata->rdio_scanner, fdata->file_path, fdata->file_open_time, fdata->open_frequency);
             }
 #endif /* WITH_RDIO_SCANNER */
-        } else {
-            unlink(fdata->file_path_tmp.c_str());
         }
     }
     fdata->file_path.clear();
@@ -488,6 +489,8 @@ static bool close_if_necessary(output_t* output, bool reopening) {
 
         // check if the split should be closed
         if (should_close_split_file(duration_sec, idle_sec, fdata->split_min_file_time, fdata->split_max_file_time, fdata->split_max_idle_time)) {
+            const bool first_file = timercmp(&fdata->file_open_time, &fdata->transmission_start_time, ==);
+
             // check if the reason to close is max time and only max time
             if (should_close_split_file_max_time(duration_sec, fdata->split_max_file_time) &&
                 !should_close_split_file_idle(duration_sec, idle_sec, fdata->split_min_file_time, fdata->split_max_idle_time)) {
@@ -496,7 +499,7 @@ static bool close_if_necessary(output_t* output, bool reopening) {
                 // if is the first split (file open time and transmission start time are the same),
                 // AND filenames include transmission start times, AND the caller intends to open a
                 // new file if this one is closed, then perform a first split rename
-                if (timercmp(&fdata->file_open_time, &fdata->transmission_start_time, ==) && fdata->split_include_transmission_start && reopening) {
+                if (first_file && fdata->split_include_transmission_start && reopening) {
                     const std::string new_filepath = build_output_filename(fdata, true);
                     if (new_filepath.empty()) {
                         log(LOG_NOTICE, "failed to generate an output filename for a first split rename\n");
@@ -507,8 +510,15 @@ static bool close_if_necessary(output_t* output, bool reopening) {
                 }
             }
 
-            debug_print("closing file %s, duration %f sec, idle %f sec\n", fdata->file_path.c_str(), duration_sec, idle_sec);
-            close_file(output);
+            const bool continues = closed_due_to_max_time && reopening;
+            const double tx_span_sec = duration_sec - idle_sec;  // first to last write
+            const bool drop = should_drop_split_tx(first_file, continues, tx_span_sec, fdata->split_tx_drop_shorter_than);
+            if (drop && fdata->freq != NULL) {
+                fdata->freq->split_tx_dropped_count++;
+            }
+
+            debug_print("closing file %s, duration %f sec, idle %f sec, span %f sec, drop %d\n", fdata->file_path.c_str(), duration_sec, idle_sec, tx_span_sec, drop);
+            close_file(output, drop);
         }
         return closed_due_to_max_time;
     }
@@ -576,6 +586,9 @@ static bool output_file_ready(channel_t* channel, output_t* output) {
 #ifdef WITH_RDIO_SCANNER
     fdata->open_frequency = channel_frequency;
 #endif /* WITH_RDIO_SCANNER */
+    // NULL for a mixer's own channel; split_tx_drop_shorter_than is rejected on mixers, so the
+    // drop counter that uses it is never reached there.
+    fdata->freq = (channel->freqlist != NULL) ? &channel->freqlist[channel->freq_idx] : NULL;
 
     // build the output filename and temp name.  at this point (opening a new file)
     // we can know if this is a 2nd or later split of a transmission but can't know if
@@ -1007,6 +1020,24 @@ static void output_channel_freq_offsets(FILE* f) {
                 }
                 print_channel_metric(f, "channel_freq_offset_hz", fparms.frequency, fparms.label);
                 fprintf(f, "\t%.1f\n", fparms.freq_offset_hz.load(std::memory_order_relaxed));
+            }
+        }
+    }
+    fprintf(f, "\n");
+}
+
+static void output_channel_split_tx_dropped_counters(FILE* f) {
+    fprintf(f,
+            "# HELP channel_split_tx_dropped_counter Transmissions dropped for being shorter than split_tx_drop_shorter_than.\n"
+            "# TYPE channel_split_tx_dropped_counter counter\n");
+
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        for (int j = 0; j < dev->channel_count; j++) {
+            channel_t* channel = dev->channels + j;
+            for (int k = 0; k < channel->freq_count; k++) {
+                print_channel_metric(f, "channel_split_tx_dropped_counter", channel->freqlist[k].frequency, channel->freqlist[k].label);
+                fprintf(f, "\t%zu\n", channel->freqlist[k].split_tx_dropped_count);
             }
         }
     }
@@ -1563,6 +1594,7 @@ void write_stats_file(timeval* last_stats_write) {
     output_channel_flappy_counter(file);
     output_channel_ctcss_counter(file);
     output_channel_no_ctcss_counter(file);
+    output_channel_split_tx_dropped_counters(file);
     output_device_buffer_overflows(file);
     output_device_buffer_underruns(file);
     output_device_centerfreq_retune_failures(file);

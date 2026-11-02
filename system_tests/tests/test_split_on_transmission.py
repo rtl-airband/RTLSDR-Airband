@@ -11,13 +11,16 @@ each produces shows whether the per-output override took effect.
 The split_include_transmission_start tests use the same audio with a short
 split_max_file_time, so each transmission is cut into several parts that must be
 named as one group.
+
+The split_tx_drop_shorter_than test shortens the first burst to SHORT_TX_S, so it
+is dropped while the 5 s transmission (and every part of it when split) is kept.
 """
 
 import subprocess
 from pathlib import Path
 
 from conftest import BinaryUnderTest, run_rtl_airband
-from helpers import config_writer, iq_generator, output_validator
+from helpers import config_writer, iq_generator, output_validator, stats_validator
 
 SAMPLE_RATE = 2_048_000
 CENTERFREQ_HZ = 120_000_000
@@ -35,6 +38,12 @@ IDLE_OVERRIDE_S = 1.5
 
 # Well under DURATION_A_S / DURATION_B_S so every transmission is split mid-way.
 MAX_FILE_TIME_S = 2.0
+
+# A first burst short enough to drop, and limits either side of it (the part limit
+# is above the last part of a split 5 s transmission, which must still be kept).
+SHORT_TX_S = 0.5
+DROP_SHORTER_THAN_S = 2.0
+PART_DROP_SHORTER_THAN_S = 1.5
 
 # Splitting is driven by wall-clock time (gettimeofday in close_if_necessary), so
 # this test replays in real time regardless of --mode. A 10x speedup would compress
@@ -135,6 +144,7 @@ def _run_split_outputs(
     iq_file: Path,
     split_outputs: list[dict],
     global_settings: dict | None = None,
+    stats_filepath: Path | None = None,
 ) -> None:
     """Replay the two-burst fixture in real time into the given split outputs."""
     config_path = test_output_dir / "rtl_airband.conf"
@@ -153,6 +163,7 @@ def _run_split_outputs(
         speedup_factor=SPEEDUP_FACTOR,
         mode="multichannel",
         split_times=global_settings,
+        stats_filepath=stats_filepath,
     )
     run_rtl_airband(binary, config_path, timeout_s=TIMEOUT_S)
 
@@ -278,6 +289,30 @@ devices: ({{
 """
 
 
+def _assert_config_rejected(
+    binary: Path, directory: Path, errors: dict, key: str
+) -> None:
+    """Each config in errors exits with a configuration error naming key."""
+    for name, text in errors.items():
+        result = _run_config(binary, directory / f"{name}.conf", text)
+        assert result.returncode != 0, f"{name}: config should be rejected"
+        assert any(
+            "Configuration error" in line and key in line
+            for line in result.stderr.splitlines()
+        ), f"{name}: unexpected stderr:\n{result.stderr}"
+
+
+def _assert_ignored_warning(
+    binary: Path, config_path: Path, text: str, key: str
+) -> None:
+    """The config runs, warning that key is ignored without split_on_transmission."""
+    result = _run_config(binary, config_path, text)
+    assert result.returncode == 0, f"Warning only, got:\n{result.stderr}"
+    assert (
+        f"{key} is ignored without split_on_transmission" in result.stderr
+    ), f"Expected a warning, got:\n{result.stderr}"
+
+
 def test_split_include_transmission_start_config_validation(
     binary_under_test: BinaryUnderTest,
     test_output_dir: Path,
@@ -303,28 +338,14 @@ def test_split_include_transmission_start_config_validation(
             top='split_include_transmission_start = "yes";',
         ),
     }
-    for name, text in errors.items():
-        result = _run_config(
-            binary_under_test.path, test_output_dir / f"{name}.conf", text
-        )
-        assert result.returncode != 0, f"{name}: config should be rejected"
-        assert (
-            "Configuration error" in result.stderr
-            and "split_include_transmission_start" in result.stderr
-        ), f"{name}: unexpected stderr:\n{result.stderr}"
-
-    ignored = _run_config(
+    key = "split_include_transmission_start"
+    _assert_config_rejected(binary_under_test.path, test_output_dir, errors, key)
+    _assert_ignored_warning(
         binary_under_test.path,
         test_output_dir / "ignored.conf",
-        _validation_config(
-            iq_file, test_output_dir, "split_include_transmission_start = true;"
-        ),
+        _validation_config(iq_file, test_output_dir, f"{key} = true;"),
+        key,
     )
-    assert ignored.returncode == 0, f"Warning only, got:\n{ignored.stderr}"
-    assert (
-        "split_include_transmission_start is ignored without split_on_transmission"
-        in ignored.stderr
-    ), f"Expected a warning, got:\n{ignored.stderr}"
 
     global_only = _run_config(
         binary_under_test.path,
@@ -337,3 +358,103 @@ def test_split_include_transmission_start_config_validation(
     assert (
         "split_include_transmission_start is ignored" not in global_only.stderr
     ), f"The global value alone should not warn:\n{global_only.stderr}"
+
+
+def test_split_tx_drop_shorter_than(
+    binary_under_test: BinaryUnderTest,
+    test_output_dir: Path,
+    cache_dir: Path,
+) -> None:
+    """
+    A whole transmission shorter than the limit is deleted and counted; a split one keeps every part.
+
+    The limit is set globally; "plainsplit" turns it off per output.
+    """
+    iq_file = iq_generator.get_or_generate_scan(
+        duration_a_s=SHORT_TX_S,
+        gap_s=GAP_S,
+        duration_b_s=DURATION_B_S,
+        cache_dir=cache_dir,
+    )
+    stats_path = test_output_dir / "stats.prom"
+    off = {"split_tx_drop_shorter_than": 0}
+    split = {"split_max_file_time": MAX_FILE_TIME_S}
+    _run_split_outputs(
+        binary_under_test.path,
+        test_output_dir,
+        iq_file,
+        [
+            _split_output(test_output_dir, "dropped", {}),
+            _split_output(test_output_dir, "plainsplit", {**split, **off}),
+            _split_output(
+                test_output_dir,
+                "partskept",
+                {**split, "split_tx_drop_shorter_than": PART_DROP_SHORTER_THAN_S},
+            ),
+        ],
+        global_settings={"split_tx_drop_shorter_than": DROP_SHORTER_THAN_S},
+        stats_filepath=stats_path,
+    )
+
+    dropped = output_validator.count_mp3_files(test_output_dir, "dropped")
+    dropped_s = output_validator.total_mp3_duration_s(test_output_dir, "dropped")
+    assert (
+        dropped == 1
+    ), f"Only the {SHORT_TX_S}s burst should be dropped, got {dropped}"
+    assert (
+        dropped_s > DURATION_B_S - 1.0
+    ), f"The kept file should be the {DURATION_B_S}s transmission, got {dropped_s:.2f}s"
+
+    # every part of the split transmission is kept, including its short last part
+    plainsplit = output_validator.count_mp3_files(test_output_dir, "plainsplit")
+    partskept = output_validator.count_mp3_files(test_output_dir, "partskept")
+    assert (
+        plainsplit >= 3
+    ), f"The {DURATION_B_S}s transmission should split: {plainsplit}"
+    assert (
+        partskept == plainsplit - 1
+    ), f"Only the short burst should be dropped: {partskept} vs {plainsplit} files"
+
+    freq_hz = CENTERFREQ_HZ + iq_generator.SCAN_DEMOD_OFFSET_HZ
+    count = stats_validator.load(stats_path).channel(
+        "channel_split_tx_dropped_counter", freq_hz
+    )
+    assert count == 2, f"One drop each on dropped and partskept, got {count}"
+
+
+def test_split_tx_drop_shorter_than_config_validation(
+    binary_under_test: BinaryUnderTest,
+    test_output_dir: Path,
+    cache_dir: Path,
+) -> None:
+    """Out-of-range values, non-numbers and mixer outputs are errors; without splitting it warns."""
+    iq_file = _scan_fixture(cache_dir)
+    key = "split_tx_drop_shorter_than"
+    split = "split_on_transmission = true; split_max_file_time = 10.0;"
+    errors = {
+        "drop_mixer": _validation_config(
+            iq_file, test_output_dir, split, mixer=f"{key} = 0.5;"
+        ),
+        "drop_negative": _validation_config(
+            iq_file, test_output_dir, f"{split} {key} = -1.0;"
+        ),
+        "drop_at_max": _validation_config(
+            iq_file, test_output_dir, f"{split} {key} = 10.0;"
+        ),
+        "drop_string": _validation_config(
+            iq_file, test_output_dir, f'{split} {key} = "1";'
+        ),
+        "drop_global_at_max": _validation_config(
+            iq_file,
+            test_output_dir,
+            "split_on_transmission = true;",
+            top=f"split_max_file_time = 10.0; {key} = 10.0;",
+        ),
+    }
+    _assert_config_rejected(binary_under_test.path, test_output_dir, errors, key)
+    _assert_ignored_warning(
+        binary_under_test.path,
+        test_output_dir / "drop_ignored.conf",
+        _validation_config(iq_file, test_output_dir, f"{key} = 0.5;"),
+        key,
+    )

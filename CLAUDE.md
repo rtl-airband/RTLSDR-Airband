@@ -38,6 +38,14 @@ completed transmission files to RDIO via API. Independent of upstream's `split_m
 `split_max_file_time`/`split_max_idle_time` (added upstream in `v5.4.0`), which control *when* a
 split file closes; `min_rx_seconds` then decides whether the already-closed file is kept. Lowering
 `split_max_idle_time` below `min_rx_seconds` will discard transmissions that used to be saved.
+Upstream's `split_tx_drop_shorter_than` (#580) is a second, independent drop rule in the same
+`close_file()`. A file is deleted if either rule says so. `min_rx_seconds` measures
+open-to-last-write and applies to every closed file. #580 measures first-to-last write, never
+drops a part of a split transmission or a file closed at shutdown, and is the only rule counted
+in `channel_split_tx_dropped_counter`. `post_write_script` and the rdio-scanner upload (item 4)
+run only for kept files. Covered end to end by `system_tests/tests/test_min_rx_seconds.py`,
+the first system test for either option. It was added when #580 was merged, because the merge
+rewrote this path.
 
 **4. Native rdio-scanner call-upload support** (`src/rdio_scanner.cpp`, new) — replaces the
 `post_write_script` + external CSV lookup this fork previously used to push completed
@@ -98,7 +106,9 @@ caught this until two branches' own new mixer system tests hit it independently 
 NULL`, defaulting to `0` for a mixer's own channel. Upstream #574 (`split_include_transmission_start`)
 restructured `output_file_ready()` around a new `build_output_filename()` and again dereferenced
 `freqlist` unconditionally, though now only when `include_freq` is set. The guard was re-applied
-when that change was merged. Watch for this on future upstream changes to the function.
+when that change was merged. Upstream #580 then added `fdata->freq = &channel->freqlist[...]`
+(for its drop counter), also unguarded; it is set to `NULL` for a mixer's channel here, and the
+counter increment checks it. Watch for this on future upstream changes to the function.
 
 #### UDP stream output
 
@@ -346,7 +356,8 @@ one JSON object per line and returning one JSON response line: `retune`, `set_ga
 the top-level globals. A change to a *global* setting — `shout_metadata_delay`, `stats_filepath`,
 `fft_size`, or upstream's `split_min_file_time`/`split_max_file_time`/`split_max_idle_time` —
 is silently ignored with no `skipped_requires_restart` entry. The same goes for the newer upstream
-globals `stats_update_interval` (#579) and `split_include_transmission_start` (#574). Any of them needs a restart (or SIGHUP,
+globals `stats_update_interval` (#579), `split_include_transmission_start` (#574) and
+`split_tx_drop_shorter_than` (#580). Any of them needs a restart (or SIGHUP,
 item 7). *Per-output* `split_*` values are covered for free: item 31's `config_signature` is a
 full `serialize_setting()` of the raw channel block, so editing one rebuilds that channel like any
 other output change.
@@ -864,6 +875,7 @@ if they are ever proposed upstream.
 
 ## Working Norms
 
+- **Never commit directly to `main`.** Check `git branch --show-current` before committing; if it is `main`, create a branch first. All changes reach `main` through a pull request. Name branches `<prefix>/<short_description>`, where the prefix is the contributor's GitHub username or a category such as `dev` or `fix` (e.g. `dev/drop_macos14_ci`).
 - **Keep this file updated** as changes are made to the codebase.
 - **Never guess or make assumptions** — ask clarifying questions when requirements are unclear.
 - **All code changes should include unit tests.** When possible, write tests first and implement code to make them pass (TDD).
@@ -975,7 +987,7 @@ docker buildx build --platform linux/arm/v6 --load -t rtlsdr-airband:armv6 .
 
 ## Code Formatting and Pre-commit
 
-Uses clang-format v14 with Chromium style (indent=4, column limit=200, config in `.clang-format`).
+Uses clang-format with Chromium style (indent=4, column limit=200, config in `.clang-format`). The version is pinned only in the `dev` group of `pyproject.toml` (locked in `uv.lock`); the pre-commit hook, the `code_formatting.yml` workflow, and VS Code all run that copy via `uv`, never a distro `clang-format-N`. The dependency is skipped on armv6l (no wheel), so the hook cannot run there. To change the version, edit the pin, run `uv lock`, then `pre-commit run clang-format --all-files`.
 
 ```bash
 # Install pre-commit hooks (once, after cloning)
@@ -985,12 +997,12 @@ pre-commit install
 pre-commit run --all-files
 
 # Format C++ source files manually (also used by CI)
-./scripts/reformat_code
+pre-commit run clang-format --all-files
 ```
 
 Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 - YAML/JSON validity, trailing whitespace, EOF newlines, shebang permissions, large files, merge conflict markers, private keys
-- clang-format on all `src/*.cpp` and `src/*.h` files
+- clang-format on all C/C++ files under `src/`
 - shellcheck on all bash scripts (excluding `init.d/`)
 - black, isort, and pylint on all `system_tests/**/*.py` files
 - Build (AM and NFM) and C++ unit tests when `src/*.cpp`, `src/*.h`, or `CMakeLists.txt` are modified (`scripts/run_unit_tests`)
@@ -1000,7 +1012,7 @@ Pre-commit hooks (`.pre-commit-config.yaml`) run on every commit and check:
 
 Four workflows run checks on open pull requests (`.github/workflows/`); `platform_build.yml` skips fork PRs. All of them except `code_formatting.yml` also run on pushes to `main`, tags, `workflow_dispatch`, and a daily schedule; `code_formatting.yml` runs on PRs and daily. A fifth, `version_bump.yml`, runs after a PR is merged — see [Version Tagging](#version-tagging).
 
-**`code_formatting.yml`** — runs `./scripts/reformat_code` and fails if any files differ.
+**`code_formatting.yml`** — runs `uvx pre-commit run clang-format --all-files` and fails if the hook reformats any file.
 
 **`ci_build.yml`** — builds and tests four configurations on Ubuntu (x86 and ARM) and macOS:
 ```bash
@@ -1204,9 +1216,15 @@ the option name against `parse_outputs()` before assuming a code bug.
 
 `file`/`rawfile` outputs with `split_on_transmission = true` can set `split_include_transmission_start` (per output > global > default `false`; the global is parsed in `main()` in `src/rtl_airband.cpp`, the per-output value in `parse_split_file_times` in `src/config.cpp`). It changes only file names, never when files close. A transmission cut by `split_max_file_time` is named `<template>_<tx start>_<part start>[_<freq>]<suffix>`; part 1 repeats the tx start, and unsplit transmissions keep `<template>_<start>`. Names are built by `build_output_filename` (`src/output.cpp`). Part 1 is written under the standalone `.tmp` name and renamed to the part name in `close_if_necessary` when it is split; parts 2+ open under the part name, in the tx start's dated folder. A file that reaches max time while squelch is closed ends the transmission, as it always closed there. Examples: `config/split_include_transmission_start*.conf`.
 
+`split_tx_drop_shorter_than` (seconds, global or per output, default `0` = off, must be `< split_max_file_time`) deletes the `.tmp` file instead of renaming it when a transmission that fit in one file spans (first to last write) less than the limit; every part of a split transmission is kept. The check is in `close_if_necessary` (`should_drop_split_tx`), so files closed at shutdown are never dropped. Drops are counted per channel frequency in the stats file as `channel_split_tx_dropped_counter`.
+
 ### Unit Tests
 
-Tests use Google Test (fetched via CMake FetchContent). Test files in `src/test_*.cpp` cover filters, squelch, CTCSS, helper functions, and signal generation. `src/test_base_class.h` provides test utilities.
+Tests use Google Test (fetched via CMake FetchContent). In this fork the `unittests` binary links
+`config.cpp` but not `rtl_airband.cpp`. Every global that `config.cpp` reads therefore needs a
+test-side definition, with the same default, in `src/test_live_reconfig.cpp`. Upstream's tests
+don't link `config.cpp`, so an upstream merge that adds a global (e.g.
+`global_split_tx_drop_shorter_than`, #580) builds fine upstream and fails to link here. Test files in `src/test_*.cpp` cover filters, squelch, CTCSS, helper functions, and signal generation. `src/test_base_class.h` provides test utilities.
 
 ## Resolved Issue: UDP Stream "Pacing" Was a Byte-Length Bug
 

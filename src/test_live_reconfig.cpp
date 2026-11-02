@@ -43,6 +43,7 @@ double global_split_min_file_time = 1.0;
 double global_split_max_file_time = 60.0 * 60.0;
 double global_split_max_idle_time = 0.5;
 bool global_split_include_transmission_start = false;
+double global_split_tx_drop_shorter_than = 0.0;
 #ifdef NFM
 // config.cpp's parse_devices() references this as extern under NFM; normally defined in
 // rtl_airband.cpp, which can't be linked here for the same reasons documented above. None of the

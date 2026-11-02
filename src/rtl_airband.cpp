@@ -104,6 +104,7 @@ char* cfgfile = CFGFILE;  // overridden by -c; promoted to global so reload_diff
 int rdio_scanner_queue_depth = 64;  // matches the previous hardcoded MAX_QUEUE_DEPTH
 #endif                              /* WITH_RDIO_SCANNER */
 bool global_split_include_transmission_start = false;
+double global_split_tx_drop_shorter_than = 0.0;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
 
@@ -214,13 +215,9 @@ class AFC {
     const status _prev_axcindicate;
 
 #ifdef WITH_BCM_VC
-    float square(const GPU_FFT_COMPLEX* fft_results, size_t index) {
-        return fft_results[index].re * fft_results[index].re + fft_results[index].im * fft_results[index].im;
-    }
+    float square(const GPU_FFT_COMPLEX* fft_results, size_t index) { return fft_results[index].re * fft_results[index].re + fft_results[index].im * fft_results[index].im; }
 #else
-    float square(const fftwf_complex* fft_results, size_t index) {
-        return fft_results[index][0] * fft_results[index][0] + fft_results[index][1] * fft_results[index][1];
-    }
+    float square(const fftwf_complex* fft_results, size_t index) { return fft_results[index][0] * fft_results[index][0] + fft_results[index][1] * fft_results[index][1]; }
 #endif /* WITH_BCM_VC */
 
     template <class FFT_RESULTS, int STEP>
@@ -994,6 +991,11 @@ int main(int argc, char* argv[]) {
 #endif /* WITH_RDIO_SCANNER */
         if (!setting_as_bool_or(root, "split_include_transmission_start", global_split_include_transmission_start, &global_split_include_transmission_start)) {
             cerr << "Configuration error: split_include_transmission_start must be a boolean\n";
+            error();
+        }
+        parse_global_double(root, "split_tx_drop_shorter_than", &global_split_tx_drop_shorter_than);
+        if (!valid_split_tx_drop_shorter_than(global_split_tx_drop_shorter_than, global_split_max_file_time)) {
+            cerr << "Configuration error: " << split_tx_drop_shorter_than_constraint << "\n";
             error();
         }
 #ifdef NFM
