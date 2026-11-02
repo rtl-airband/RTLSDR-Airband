@@ -33,6 +33,9 @@ build "NFM Release native" "${BUILD_NFM_RELEASE}" -DCMAKE_BUILD_TYPE=Release -DN
 
 build "AM Release generic"  "${BUILD_AM_GENERIC}"   -DCMAKE_BUILD_TYPE=Release -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
 build "NFM Release generic" "${BUILD_NFM_GENERIC}"  -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DBUILD_UNITTESTS=TRUE
-build "Profiling generic"   "${BUILD_PROFILING}"    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DPROFILING=TRUE -DBUILD_UNITTESTS=TRUE
+# gperftools is optional (see install_dependencies)
+if pkg-config --exists libprofiler; then
+    build "Profiling generic"   "${BUILD_PROFILING}"    -DCMAKE_BUILD_TYPE=Release -DNFM=TRUE -DPLATFORM=generic -DPROFILING=TRUE -DBUILD_UNITTESTS=TRUE
+fi
 
 echo "*** Build complete ***"
