@@ -7,8 +7,9 @@
 
 This is a personal fork of [`rtl-airband/RTLSDR-Airband`](https://github.com/rtl-airband/RTLSDR-Airband)
 that tracks upstream `main` and carries a small delta on top of it. This fork tags its own
-releases independently of upstream's — `v6.3.0` is this fork's delta on top of upstream `v6.1.0`
-plus upstream's `split_include_transmission_start` (#574). `v5.5.0` added cross-instance mixer
+releases independently of upstream's — `v7.1.0` is this fork's delta on top of upstream `v7.0.0`,
+which removed MiriSDR support. Upstream and this fork both have `v5.3.0`, `v6.3.0` and `v6.3.1` tags,
+which name different code; check the `Features:` line below to tell them apart. `v5.5.0` added cross-instance mixer
 input (below), and `v5.3.0` introduced live reconfiguration and `send_tx_tags` support.
 
 - **`post_write_script` and `min_rx_seconds` file-output options** — run a script after
@@ -193,7 +194,7 @@ device_status ...`. It lists this fork's capabilities, followed by the optional 
 compiled in (`rdio_scanner`, `soapysdr`, `pulseaudio`, `nfm`; `mirisdr` until upstream v7.0.0
 removed that driver). Tools such as
 [rtl-airband-panel](https://github.com/jschmall/rtl-airband-panel) use it to tell this fork
-from a stock build, since both now use `v6.x` version numbers. Names are only ever added,
+from a stock build, since both use the same `vN.x` version numbers. Names are only ever added,
 never renamed or removed.
 
 ### Cross-Instance Mixer Input

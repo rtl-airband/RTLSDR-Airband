@@ -778,8 +778,9 @@ json_log post_write_script auto_ppm` (`auto_ppm` added by item 45), followed by 
 (`rdio_scanner`, `soapysdr`, `pulseaudio`, `nfm`). `mirisdr` was also in that list until
 upstream v7.0.0 removed the driver. It was a build-component name, not a fork capability, so its
 disappearance doesn't break the never-remove rule below, which covers the fork capability names.
-- **Why:** upstream now tags in the same `v6.x` range as this fork (upstream `v6.2.0`), so a
-  version number can no longer tell the two apart. rtl-airband-panel reads this line to decide
+- **Why:** upstream tags in the same `vN.x` range as this fork, and `v6.3.0`/`v6.3.1` exist in
+  both with different meanings (see "Version tagging on this fork"), so a version number can no
+  longer tell the two apart. rtl-airband-panel reads this line to decide
   whether an instance runs the fork, and soft-locks fork-only settings and Apply live when it
   doesn't.
 - **The names are an interface.** Add new names, but never rename or remove one. The line
@@ -1086,16 +1087,31 @@ exists but has never actually run (see the CI note above — no workflow run has
 this repo), so **fork tags are created by hand** on the merge commit and pushed by name:
 
 ```bash
-git tag -a v6.3.0 -m "..." && git push origin v6.3.0
+git tag -a v7.1.0 -m "..." && git push origin v7.1.0
 ```
 
 This fork tags its own releases in the same `vN.N.N` namespace upstream uses, so its numbers must
-stay **above** upstream's latest to be unambiguous — `v6.3.0` sits above upstream `v6.1.0`. Also
+stay **above** upstream's latest to be unambiguous — `v7.1.0` sits above upstream `v7.0.0` (#582), leaving
+room for upstream `v7.0.x` patch releases. Also
 check whether any upstream commit being merged is still **untagged** and carries a bump keyword:
 upstream will tag it later, and the fork must leave room for that. `v6.3.0` skips `v6.2.0` because
-upstream #574 (`#minor`, merged here) had no tag yet at merge time. The
-upstream tags that arrive with `git fetch upstream` (currently through `v6.1.0`) live in the local
-tag namespace but are deliberately **not pushed to `origin`**, which is why `git push --tags` must
+upstream #574 (`#minor`, merged here) had no tag yet at merge time.
+
+**This rule was broken more than once, and three names now clash.** Upstream later tagged its own `v6.3.0`
+(#580) and `v6.3.1` (#581), which point at different commits from the fork's tags of the same
+names. The same is true of `v5.3.0`: the fork's `v5.3.0` (`86d25de`) exists only in the local clone,
+not on `origin`, and upstream's `v5.3.0` is a different commit. Neither name tells you which project a build came from, so use the `-v` `Features:` line
+(item 44) to identify a fork build. Because of the clash, `remote.upstream.tagOpt` is set to
+`--no-tags` in the local clone, and upstream tags are fetched under a separate namespace instead:
+
+```bash
+git config remote.upstream.tagOpt --no-tags
+git config --add remote.upstream.fetch '+refs/tags/*:refs/tags-upstream/*'
+git log -1 refs/tags-upstream/v7.0.0   # inspect an upstream tag without clashing with a fork tag
+```
+
+Older upstream tags fetched before that change (through `v7.0.0`, minus the three clashing names)
+still sit in the local `refs/tags/` namespace. They are deliberately **not pushed to `origin`**, which is why `git push --tags` must
 never be used here — the README's fork-version badge reads `origin`'s tags and would otherwise
 start reporting upstream's release as this fork's. `scripts/find_version` (and therefore
 `rtl_airband -v`) reports `git describe` against whichever tag is nearest in local history, so it
@@ -1106,7 +1122,7 @@ can name an upstream tag on an untagged working tree; that's expected, not drift
 `origin` (`git push origin --delete refs/tags/<tag>`) and force a mirror sync. Tag and branch
 *deletions* don't trigger a sync on their own; they otherwise reach GitHub only at the next scheduled
 sync (up to 8h). The fork's own tags on `origin` are exactly: `v5.5.0`, `v6.3.0`, `v6.3.1`, `v6.4.0`,
-`v6.5.0`, plus any created since.
+`v6.5.0`, `v6.6.0`, `v6.7.0`, `v7.1.0`, plus any created since.
 
 `CHANGELOG.md` is fork-only (upstream has none) and is **not** currently kept in sync — it stops
 at 2026-07-23 and predates fork-delta items 27-42 entirely. Treat this file's numbered fork-delta
