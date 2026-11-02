@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Fail if any step fails.
+set -eo pipefail
+
 unameOut="$(uname -s)"
 
 echo "Running on ${unameOut} as ${USER}"
@@ -19,16 +22,6 @@ case "${unameOut}" in
             libsoapysdr-dev \
             libpulse-dev \
             libopenblas0-pthread
-
-        (
-            git clone https://github.com/f4exb/libmirisdr-4
-            cd libmirisdr-4 || exit
-            mkdir build
-            cd build || exit
-            cmake ../
-            sudo make install
-            sudo ldconfig
-        )
         ;;
 
     Darwin*)

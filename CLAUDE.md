@@ -35,7 +35,7 @@ When reviewing code:
 
 ## Project Overview
 
-RTLSDR-Airband is a C++ SDR (Software-Defined Radio) application that receives analog radio voice channels from SDR devices (RTL-SDR, SoapySDR, MiriSDR) and produces MP3 audio streams for Icecast, file recording, UDP, and PulseAudio.
+RTLSDR-Airband is a C++ SDR (Software-Defined Radio) application that receives analog radio voice channels from SDR devices (RTL-SDR, SoapySDR) and produces MP3 audio streams for Icecast, file recording, UDP, and PulseAudio.
 
 ## Build Commands
 
@@ -66,7 +66,6 @@ Key CMake flags (all in `src/CMakeLists.txt`):
 | `NFM` | OFF | Enable Narrow FM demodulation |
 | `PLATFORM` | `native` | Optimization target: `native`, `generic`, `rpiv2` |
 | `RTLSDR` | ON | RTL-SDR driver |
-| `MIRISDR` | ON | Mirics SDR driver |
 | `SOAPYSDR` | ON | SoapySDR (vendor-neutral) driver |
 | `PULSEAUDIO` | ON | PulseAudio output |
 | `BUILD_UNITTESTS` | OFF | Build Google Test unit tests |
@@ -77,7 +76,7 @@ Key CMake flags (all in `src/CMakeLists.txt`):
 The container image is built from a multi-stage `Dockerfile` based on `alpine:latest` (musl libc). Alpine is used because it ships a native `linux/arm/v6` image, so a single base covers every Raspberry Pi model (Pi 1/Zero armv6 through Pi 5 arm64) — Debian dropped the armel/`arm/v5` variant that the arm/v6 build previously relied on via fallback.
 
 - Build/runtime dependencies come from `apk`. Note the Alpine-specific package names: `libconfig++` (Alpine splits the C++ binding into its own package), `libstdc++` (not in the base image), `fftw-single-libs`, `libpulse`, and `pkgconf` (provides `pkg-config`).
-- SoapySDR, the rtl-sdr-blog fork (built from source for RTL-SDR Blog V4 support), and libmirisdr-4 are compiled from source with CMake and installed to `/usr` — musl only searches `/lib` and `/usr/lib`, not `/usr/local/lib`. `ENV CMAKE_POLICY_VERSION_MINIMUM=3.5` lets their pre-3.5 `cmake_minimum_required` configure under Alpine's CMake 4.
+- The rtl-sdr-blog fork (for RTL-SDR Blog V4 support) and the SoapyAirspy module are compiled from source with CMake and installed to `/usr` — musl only searches `/lib` and `/usr/lib`, not `/usr/local/lib`. `ENV CMAKE_POLICY_VERSION_MINIMUM=3.5` lets their pre-3.5 `cmake_minimum_required` configure under Alpine's CMake 4.
 - Both stages run `unittests`, so a broken build fails `docker build`. `scripts/find_version` is POSIX `sh` (Alpine has no bash).
 
 ```bash
@@ -135,7 +134,7 @@ Then runs `unittests` for all four, runs the system tests (`--mode thorough`) ag
 
 The workflow passes `--sudo` exactly when `BCM_VC=ON` (the VideoCore GPU FFT needs root). Each target's work dir is `~/rtlsdr-airband-ci` in the CI account's home (not a tmpfs, which is too small for the build tree and uv venv), reused across runs so builds stay warm; this relies on there being a single `airband-proxy` runner, which runs one job at a time.
 
-The proxy runner runs as user `airband-proxy` (`700` home, no sudo) and holds the targets' SSH key. On each Pi, CI logs in as `airband-build`, which has no password and either no sudo or, on BCM targets, a sudo rule for only the per-run `rtl_airband` binary. Build deps are **pre-installed** on the Pis, so the workflow never runs `install_dependencies` there. **Re-provision the Pis when `.github/install_dependencies` changes** — optional drivers (MiriSDR, SoapySDR, PulseAudio) are auto-detected, so a stale target may silently build without them rather than fail.
+The proxy runner runs as user `airband-proxy` (`700` home, no sudo) and holds the targets' SSH key. On each Pi, CI logs in as `airband-build`, which has no password and either no sudo or, on BCM targets, a sudo rule for only the per-run `rtl_airband` binary. Build deps are **pre-installed** on the Pis, so the workflow never runs `install_dependencies` there. **Re-provision the Pis when `.github/install_dependencies` changes** — optional drivers (SoapySDR, PulseAudio) are auto-detected, so a stale target may silently build without them rather than fail.
 
 Provisioning:
 1. As `airband-proxy`, run `.github/setup_orchestrator_ssh` (creates the key, pins host keys, and writes the managed `~/.ssh/config.d/airband-ci`, prepending an `Include` for it to `~/.ssh/config`; don't hand-edit the managed file, it is regenerated on every run) and copy the `sudo PROXY_PUBKEY=… PROXY_FROM=… .github/setup_remote_test_target` command it prints for each target.
@@ -220,7 +219,7 @@ SDR device (input-*.cpp)
 | `src/config.cpp` | libconfig++ parsing for devices, channels, mixers, outputs |
 | `src/output.cpp` | MP3 encoding, Icecast connections, file/UDP output |
 | `src/mixer.cpp` | Multi-channel mixer with ampfactor/balance |
-| `src/input-*.cpp` | SDR device drivers (rtlsdr, soapysdr, mirisdr, file) |
+| `src/input-*.cpp` | SDR device drivers (rtlsdr, soapysdr, file) |
 | `src/input-common.cpp/h` | Input device abstraction (`input_t` function-pointer interface) |
 | `src/filters.cpp/h` | IIR lowpass and notch filters |
 | `src/squelch.cpp/h` | Noise-power-based voice activity detection |
