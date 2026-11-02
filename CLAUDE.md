@@ -39,7 +39,7 @@ RTLSDR-Airband is a C++ SDR (Software-Defined Radio) application that receives a
 
 ## Build Commands
 
-Dependencies: libconfig++, libmp3lame, libshout, libfftw3f, librtlsdr, libsoapysdr, libpulse, plus libgoogle-perftools for `-DPROFILING=TRUE` (Linux only). Install via `.github/install_dependencies`.
+Dependencies: libconfig++, libmp3lame, libshout, libfftw3f, librtlsdr, libsoapysdr, libpulse, plus optional libgoogle-perftools for `-DPROFILING=TRUE` (`install_dependencies` installs it only where apt can resolve it; `scripts/build_all_combos` skips the profiling build when `libprofiler` isn't found). Install via `.github/install_dependencies`.
 
 ```bash
 # Standard debug build with unit tests

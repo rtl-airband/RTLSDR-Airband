@@ -21,8 +21,14 @@ case "${unameOut}" in
             librtlsdr-dev \
             libsoapysdr-dev \
             libpulse-dev \
-            libgoogle-perftools-dev \
             libopenblas0-pthread
+
+        # Optional, for -DPROFILING=TRUE, install only if apt can resolve it.
+        if sudo apt-get install -y --dry-run libgoogle-perftools-dev >/dev/null 2>&1; then
+            sudo apt-get install -y libgoogle-perftools-dev
+        else
+            echo "libgoogle-perftools-dev is not installable here, profiling build will be skipped"
+        fi
         ;;
 
     Darwin*)
