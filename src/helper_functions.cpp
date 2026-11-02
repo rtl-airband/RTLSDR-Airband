@@ -100,9 +100,6 @@ std::string fork_features() {
 #ifdef WITH_SOAPYSDR
     features += " soapysdr";
 #endif
-#ifdef WITH_MIRISDR
-    features += " mirisdr";
-#endif
 #ifdef WITH_PULSEAUDIO
     features += " pulseaudio";
 #endif

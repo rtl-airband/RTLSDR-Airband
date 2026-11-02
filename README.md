@@ -190,7 +190,8 @@ devices: ({
 
 `rtl_airband -v` prints a second line after the version: `Features: fork control_socket
 device_status ...`. It lists this fork's capabilities, followed by the optional components
-compiled in (`rdio_scanner`, `soapysdr`, `mirisdr`, `pulseaudio`, `nfm`). Tools such as
+compiled in (`rdio_scanner`, `soapysdr`, `pulseaudio`, `nfm`; `mirisdr` until upstream v7.0.0
+removed that driver). Tools such as
 [rtl-airband-panel](https://github.com/jschmall/rtl-airband-panel) use it to tell this fork
 from a stock build, since both now use `v6.x` version numbers. Names are only ever added,
 never renamed or removed.

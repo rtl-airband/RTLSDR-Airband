@@ -49,8 +49,8 @@ typedef struct {
 } input_settings_t;
 
 struct input_t {
-    // Set once by each driver's own <type>_input_new(), e.g. "rtlsdr"/"soapysdr"/"mirisdr"/
-    // "file" - matches the config file's "type" string. Only consumed by the dynamic_reload
+    // Set once by each driver's own <type>_input_new(), e.g. "rtlsdr"/"soapysdr"/"file"
+    // - matches the config file's "type" string. Only consumed by the dynamic_reload
     // reload_diff path (live_reconfig.cpp) to detect a device's driver type changing across a
     // config edit, which is out of v1 scope and needs a restart rather than a live apply.
     const char* driver_type;
@@ -78,7 +78,7 @@ struct input_t {
     void* (*run_rx_thread)(void* input_ptr);  // to be launched via pthread_create()
     int (*set_centerfreq)(input_t* const input, int const centerfreq);
     // set_gain/set_bandwidth/set_correction are nullable, unlike set_centerfreq - not every driver
-    // has a live hook for these (e.g. mirisdr has none of the three). input_set_gain()/
+    // has a live hook for these (e.g. the file driver has none of the three). input_set_gain()/
     // input_set_bandwidth()/input_set_correction() return -1/ENOTSUP when the driver's pointer is
     // NULL, so callers get a clear "not supported by this driver" result instead of a silent
     // no-op.

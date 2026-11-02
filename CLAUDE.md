@@ -751,12 +751,12 @@ and signal levels and per-device buffer counters only, and the control socket ha
   **Gotcha found while testing:** `compute_channel_bin()` picks the bin *below* a channel that
   lands exactly on a bin center; only the 7-term Blackman-Harris window's main lobe makes the
   carrier visible there, so the unit test's simulated DFT has to apply the same window.
-- **Driver settings readback.** New nullable `input_t::get_settings` hook (rtlsdr, mirisdr,
-  soapysdr) reports gain / correction / tuner bandwidth from the driver's `dev_data`. Originally
+- **Driver settings readback.** New nullable `input_t::get_settings` hook (rtlsdr,
+  soapysdr; also mirisdr until upstream v7.0.0 removed that driver) reports gain / correction / tuner bandwidth from the driver's `dev_data`. Originally
   called only from the control socket thread; since item 45 every caller holds
   `input_control_mutex()`, the lock the live `set_*` wrappers take, so there's no concurrent
   writer. rtlsdr now stores the gain the tuner actually took (nearest supported step)
-  at init, as `rtlsdr_set_gain` already did. mirisdr's correction is in Hz (libmirisdr has no ppm).
+  at init, as `rtlsdr_set_gain` already did.
 - **Control socket `status` command** (read-only): `{"ok":true,"version":...,"devices":[{index,
   driver,state,mode,centerfreq,sample_rate,gain,correction,bandwidth,peak_dbfs,clipped_samples,
   buffer_overflows,buffer_underruns,retune_failures,output_overruns,channels:[{index,enabled,
@@ -775,7 +775,9 @@ and signal levels and per-device buffer counters only, and the control socket ha
 `src/helper_functions.cpp`, printed from `main()`). The version line is unchanged; a second line
 reads `Features: fork control_socket device_status reserve mixer_remote send_tx_tags stats_http
 json_log post_write_script auto_ppm` (`auto_ppm` added by item 45), followed by whichever optional build components are compiled in
-(`rdio_scanner`, `soapysdr`, `mirisdr`, `pulseaudio`, `nfm`).
+(`rdio_scanner`, `soapysdr`, `pulseaudio`, `nfm`). `mirisdr` was also in that list until
+upstream v7.0.0 removed the driver. It was a build-component name, not a fork capability, so its
+disappearance doesn't break the never-remove rule below, which covers the fork capability names.
 - **Why:** upstream now tags in the same `v6.x` range as this fork (upstream `v6.2.0`), so a
   version number can no longer tell the two apart. rtl-airband-panel reads this line to decide
   whether an instance runs the fork, and soft-locks fork-only settings and Apply live when it
@@ -790,7 +792,7 @@ carrier offsets and item 35's live correction. Device keys: `auto_ppm` (bool), `
 (s, default 30, ≥5), `auto_ppm_max_ppm` (default 100, 1..100), `auto_ppm_max_step` (default 5).
 - **Drivers:** only those with both `set_correction` and `get_settings` hooks, i.e. rtlsdr today;
   parse rejects the key elsewhere (`system_tests/tests/test_auto_ppm.py`). Adding soapysdr needs a
-  float-ppm `set_correction` hook. mirisdr's correction is Hz, not ppm.
+  float-ppm `set_correction` hook.
 - **Math:** residual ppm = −offset_hz / channel_freq × 1e6 (tuner LO and ADC share one rtlsdr
   crystal, so the error scales with the channel frequency, not centerfreq); new correction =
   current + residual. Matches librtlsdr's convention (`corr` = how fast the crystal runs);
