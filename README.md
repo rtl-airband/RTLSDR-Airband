@@ -173,6 +173,13 @@ devices: ({
   value. A changed `correction` is applied and becomes the new starting point.
   `set_correction` still works, but refuses values outside `auto_ppm_max_ppm`.
 - **RTL-SDR only** for now. The config is rejected on other drivers.
+- **What it can measure:** AM and analog FM voice channels measure accurately (about 0.1 ppm
+  on a NOAA weather carrier). Digital channels with no carrier, such as P25 control channels,
+  can read about 1 ppm high and pull the result. Offsets are only measured while squelch is
+  open, and a transmitter that never stops (NOAA, a control channel) needs an explicit
+  `squelch_threshold`, since automatic squelch treats a constant carrier as noise. Accuracy is
+  also bounded by the transmitters themselves: land-mobile base stations are allowed a few
+  ppm of error, which is why the median of several channels is used.
 
 `status` reports an `auto_ppm` object per device (`residual_ppm`, `contributing`,
 `rejected`, `adjustments`, `clamped`, `disabled_reason`, ...). The stats file adds

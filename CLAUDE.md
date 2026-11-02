@@ -728,7 +728,9 @@ and signal levels and per-device buffer counters only, and the control socket ha
 - **Per-channel carrier offset.** `iq_in` is now filled for *every* channel, not just
   `needs_raw_iq` ones (two stores per channel-sample, plus a memmove per batch). In the batch loop,
   while squelch is open, the power-weighted sum of z[n]·conj(z[n-1]) over the raw bin output is
-  accumulated; at the end of the batch `freq_offset_from_phase_increment()` subtracts the rotation
+  accumulated (**replaced by item 45** with the mean of per-frame phase steps, since the
+  power-weighted form is biased by hundreds of Hz on NFM); at the end of the batch
+  `freq_offset_from_phase_increment()` subtracts the rotation
   a carrier exactly on the channel frequency would have (the same quantity
   `compute_channel_dm_dphi()` derotates) and converts the remainder to Hz. Sub-Hz precision, where
   FFT bin resolution (~4-5 kHz) would be useless for ppm. Batches less than half open are dropped,
@@ -780,9 +782,8 @@ carrier offsets and item 35's live correction. Device keys: `auto_ppm` (bool), `
   float-ppm `set_correction` hook. mirisdr's correction is Hz, not ppm.
 - **Math:** residual ppm = −offset_hz / channel_freq × 1e6 (tuner LO and ADC share one rtlsdr
   crystal, so the error scales with the channel frequency, not centerfreq); new correction =
-  current + residual. Matches librtlsdr's convention (`corr` = how fast the crystal runs).
-  **The sign still needs confirming on real hardware** before a production rollout: the divergence
-  guard below is the backstop if it's wrong.
+  current + residual. Matches librtlsdr's convention (`corr` = how fast the crystal runs);
+  confirmed on hardware (setting +20 ppm moved a carrier +3.2 kHz at 162.55 MHz).
 - **Decision** (`auto_ppm_decide()`, pure, unit tested in `src/test_auto_ppm.cpp`): a frequency votes
   once it has ≥20 offset updates since the last tuning change. Estimates implying an absolute
   correction beyond ±100 ppm (`AUTO_PPM_HARD_LIMIT`) are dropped individually. The rest are
@@ -819,6 +820,31 @@ carrier offsets and item 35's live correction. Device keys: `auto_ppm` (bool), `
   `device_auto_ppm_residual_ppm`, `device_auto_ppm_adjustment_count` (auto_ppm devices only);
   LOG_INFO per adjustment, LOG_WARNING once per clamp episode, LOG_ERR on a trip.
 - **No persistence:** each start begins from config `correction`.
+- **Estimator change (affects item 43's `freq_offset_hz` too):** hardware testing showed item 43's
+  power-weighted estimate, the angle of Σ z[n]·conj(z[n−1]), is badly biased on NFM. The
+  FFT-bin channelizer's response is curved across a ±5 kHz-deviation signal, and weighting by
+  power lets it pull the result. On NOAA 162.550 it read −340 Hz at fft_size 512 (true −72 Hz),
+  and anything from −140 to +700 Hz across fft_size 256..2048. Now the plain mean of each frame's
+  wrapped, derotated phase step (`freq_offset_step_cycles()`, one atan2 per squelch-open sample),
+  accumulated as `channel_t::fo_step_sum`. That reads −64..−104 Hz against a true −89 Hz on the
+  same signal at fft_size 256–1024. A Python replay of captured IQ through the same windowed-bin
+  model matched both behaviours.
+  **Remaining limitation:** carrierless digital signals (P25 C4FM control channels) still read
+  ~1.2–1.4 ppm high when the channel sits off its bin's center (checked against a spectral
+  centroid), because the bin response tilts their flat spectrum. AM and analog FM voice are
+  carrier-dominated and unaffected. At very large offsets (≳1 kHz), wide FM reads up to ~8% low,
+  which only slows convergence.
+- **Hardware validation** (R820T dongle, NOAA 162.550 reference, true error ≈ +0.5 ppm):
+  - From `correction = −20`, it converged −20→−15→−10→−5→−1→0 at a 10 s interval and held
+    (residual +0.4).
+  - A channel mistuned 3.5 kHz with `auto_ppm_max_ppm = 10` stepped 0→5→10 and held at the limit
+    with one warning. `set_correction 11` was refused.
+  - A sign-flipped scratch build went 3→6→11, then tripped and reverted to 3.
+  - reload_diff: an unchanged config kept the learned value; `auto_ppm = false` restored the
+    config correction; `true` resumed adjusting.
+  - Continuous transmitters (NOAA, P25 control channels) need an explicit `squelch_threshold`.
+    The auto squelch learns a carrier that never drops as its noise floor and never opens, and
+    offsets are only measured while squelch is open.
 - Side fix: `DeviceConfigSnapshot::has_gain`/`gain` are now default-initialized. Hand-built test
   snapshots copied them uninitialized (UBSan "invalid bool"), the same trap the struct's other
   defaulted fields already document.

@@ -423,9 +423,10 @@ struct channel_t {
 #endif                         /* NFM */
     uint32_t dm_dphi, dm_phi;  // derotation frequency and current phase value
     // Frequency offset estimator state (demod thread only): the previous raw bin output and this
-    // batch's power-weighted sum of z[n] * conj(z[n-1]) over squelch-open samples.
+    // batch's sum of freq_offset_step_cycles() over squelch-open samples.
     float fo_prev_re, fo_prev_im;
-    double fo_acc_re, fo_acc_im;
+    double fo_expected_cycles;  // freq_offset_expected_cycles() for this batch's frequency
+    double fo_step_sum;
     int fo_open_samples;
     enum mix_modes mode;  // mono or stereo
     // axcindicate, freq_idx, and state are each written by one thread (demod/mixer) and

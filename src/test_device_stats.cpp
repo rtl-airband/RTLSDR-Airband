@@ -122,27 +122,39 @@ static double fft_window(size_t i, size_t n) {
 }
 
 // What the demod loop sees for one channel: the bin of a windowed fft_size-point DFT taken every
-// round(sample_rate / WAVE_RATE) input samples, of a carrier at carrier_hz.
-// Returns the sum of z[n] * conj(z[n-1]) over frames, which freq_offset_from_phase_increment()
-// turns back into an offset from channel_freq.
-static complex<double> simulate_phase_increment(int channel_freq, int centerfreq, int sample_rate, double carrier_hz, int frames) {
+// round(sample_rate / WAVE_RATE) input samples, of a carrier at carrier_hz, optionally frequency
+// modulated voice-like: nine incommensurate 300-2900 Hz tones, fm_tone_deviation_hz each, so the
+// spectrum is dense rather than a few Bessel lines one bin could lock onto. Returns the mean of
+// freq_offset_step_cycles() over frames, as the demod loop accumulates it.
+static double simulate_mean_step(int channel_freq, int centerfreq, int sample_rate, double carrier_hz, int frames, double fm_tone_deviation_hz = 0.0) {
     size_t const n_fft = 512;
     size_t const hop = (size_t)round((double)sample_rate / (double)WAVE_RATE);
     size_t const bin = compute_channel_bin(channel_freq, centerfreq, sample_rate, n_fft);
+    double const expected = freq_offset_expected_cycles(channel_freq, centerfreq, sample_rate);
     double const w = 2.0 * M_PI * (carrier_hz - centerfreq) / sample_rate;
-    complex<double> prev, acc;
+    const double tones[] = {311.0, 523.0, 787.0, 1033.0, 1291.0, 1597.0, 1931.0, 2389.0, 2903.0};
+    const double tone_phase[] = {0.3, 1.9, 4.2, 2.7, 5.5, 0.9, 3.6, 6.0, 1.4};
+    complex<double> prev;
+    double sum = 0.0;
     for (int f = 0; f < frames; f++) {
         complex<double> z;
         for (size_t m = 0; m < n_fft; m++) {
             double const t = (double)(f * hop + m);
-            z += fft_window(m, n_fft) * polar(1.0, w * t) * polar(1.0, -2.0 * M_PI * (double)(bin * m) / (double)n_fft);
+            double phase = w * t;
+            if (fm_tone_deviation_hz != 0.0) {
+                for (int k = 0; k < 9; k++) {
+                    phase += fm_tone_deviation_hz / tones[k] * sin(2.0 * M_PI * tones[k] * t / sample_rate + tone_phase[k]);
+                }
+            }
+            z += fft_window(m, n_fft) * polar(1.0, phase) * polar(1.0, -2.0 * M_PI * (double)(bin * m) / (double)n_fft);
         }
         if (f > 0) {
-            acc += z * conj(prev);
+            complex<double> const p = z * conj(prev);
+            sum += freq_offset_step_cycles((float)p.real(), (float)p.imag(), expected);
         }
         prev = z;
     }
-    return acc;
+    return sum / (frames - 1);
 }
 
 struct OffsetCase {
@@ -158,9 +170,22 @@ TEST_F(DeviceStatsTest, freq_offset_recovers_known_carrier_offsets_through_the_r
         {2400000, 133000000, 133912500, 75.0}, {2048000, 450000000, 449600000, -40.0}, {1000000, 118000000, 118300000, 2500.0},  // decimation 125 (AM) / 62.5 (NFM) - exercises the non-integer path
     };
     for (const OffsetCase& c : cases) {
-        complex<double> acc = simulate_phase_increment(c.channel_freq, c.centerfreq, c.sample_rate, c.channel_freq + c.offset_hz, 64);
-        float const got = freq_offset_from_phase_increment(acc.real(), acc.imag(), c.channel_freq, c.centerfreq, c.sample_rate);
+        float const got = freq_offset_from_mean_step(simulate_mean_step(c.channel_freq, c.centerfreq, c.sample_rate, c.channel_freq + c.offset_hz, 64), c.sample_rate);
         EXPECT_NEAR(got, c.offset_hz, 0.5) << "sample_rate=" << c.sample_rate << " channel=" << c.channel_freq << " offset=" << c.offset_hz;
+    }
+}
+
+TEST_F(DeviceStatsTest, freq_offset_is_not_pulled_by_the_bin_response_on_wide_fm) {
+    // NFM voice deviates up to +/-5 kHz (here nine tones of 600 Hz each), wider than a 512-point
+    // bin at 2.4 MS/s (4.7 kHz), and this channel sits ~1.5 kHz from its bin's center. Weighting phase steps by power through that
+    // bin read a NOAA weather carrier several hundred Hz off on real hardware.
+    int const fs = 2400000, cf = 162200000, ch = 162550000;
+    // Within the +/-2 ppm range where auto_ppm settles. Further out, this noise-free multi-tone
+    // signal reads up to ~8% low (it keeps sweeping past the bin edge), which only slows
+    // convergence and never overshoots.
+    for (double offset : {-300.0, -72.0, 0.0, 250.0}) {
+        float const got = freq_offset_from_mean_step(simulate_mean_step(ch, cf, fs, ch + offset, 2000, 600.0), fs);
+        EXPECT_NEAR(got, offset, 15.0) << "offset=" << offset;
     }
 }
 
@@ -168,17 +193,17 @@ TEST_F(DeviceStatsTest, freq_offset_commit_drops_mostly_closed_batches_and_smoot
     freq_t f = {};
     f.frequency = 120250000;
     int const fs = 2560000, cf = 120000000;
-    complex<double> acc = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 1000.0, 16);
+    double const step = simulate_mean_step(f.frequency, cf, fs, f.frequency + 1000.0, 16);
 
-    freq_offset_commit(&f, acc.real(), acc.imag(), WAVE_BATCH / 4, WAVE_BATCH, cf, fs);
+    freq_offset_commit(&f, step * (WAVE_BATCH / 4), WAVE_BATCH / 4, WAVE_BATCH, fs);
     EXPECT_EQ(f.freq_offset_updates.load(), 0u);
 
-    freq_offset_commit(&f, acc.real(), acc.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs);
+    freq_offset_commit(&f, step * WAVE_BATCH, WAVE_BATCH, WAVE_BATCH, fs);
     EXPECT_EQ(f.freq_offset_updates.load(), 1u);
     EXPECT_NEAR(f.freq_offset_hz.load(), 1000.0f, 0.5f) << "first estimate is taken as-is";
 
-    complex<double> acc2 = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 2000.0, 16);
-    freq_offset_commit(&f, acc2.real(), acc2.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs);
+    double const step2 = simulate_mean_step(f.frequency, cf, fs, f.frequency + 2000.0, 16);
+    freq_offset_commit(&f, step2 * WAVE_BATCH, WAVE_BATCH, WAVE_BATCH, fs);
     EXPECT_NEAR(f.freq_offset_hz.load(), 1200.0f, 1.0f) << "later estimates are smoothed";
 }
 
@@ -186,11 +211,11 @@ TEST_F(DeviceStatsTest, tuning_change_restarts_the_ppm_estimate_after_settling) 
     freq_t f = {};
     f.frequency = 120250000;
     int const fs = 2560000, cf = 120000000;
-    complex<double> before = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 1000.0, 16);
-    complex<double> after = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 100.0, 16);
+    double const before = simulate_mean_step(f.frequency, cf, fs, f.frequency + 1000.0, 16);
+    double const after = simulate_mean_step(f.frequency, cf, fs, f.frequency + 100.0, 16);
 
     for (int i = 0; i < 5; i++) {
-        freq_offset_commit(&f, before.real(), before.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 0);
+        freq_offset_commit(&f, before * WAVE_BATCH, WAVE_BATCH, WAVE_BATCH, fs, 0);
     }
     EXPECT_EQ(f.ppm_offset_updates.load(), 5u);
     EXPECT_NEAR(f.ppm_offset_hz.load(), 1000.0f, 0.5f);
@@ -198,11 +223,11 @@ TEST_F(DeviceStatsTest, tuning_change_restarts_the_ppm_estimate_after_settling) 
     // Generation 1: the first FREQ_OFFSET_SETTLE_BATCHES batches may still be pre-change
     // samples, so even ones that look like the old tuning must not reach the ppm estimate.
     for (int i = 0; i < FREQ_OFFSET_SETTLE_BATCHES; i++) {
-        freq_offset_commit(&f, before.real(), before.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 1);
+        freq_offset_commit(&f, before * WAVE_BATCH, WAVE_BATCH, WAVE_BATCH, fs, 1);
         EXPECT_EQ(f.ppm_offset_generation.load(), 1u);
         EXPECT_EQ(f.ppm_offset_updates.load(), 0u) << i;
     }
-    freq_offset_commit(&f, after.real(), after.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 1);
+    freq_offset_commit(&f, after * WAVE_BATCH, WAVE_BATCH, WAVE_BATCH, fs, 1);
     EXPECT_EQ(f.ppm_offset_updates.load(), 1u);
     EXPECT_NEAR(f.ppm_offset_hz.load(), 100.0f, 0.5f) << "restarted, not smoothed with the old value";
 
@@ -215,11 +240,11 @@ TEST_F(DeviceStatsTest, settling_counts_closed_squelch_batches_too) {
     freq_t f = {};
     f.frequency = 120250000;
     int const fs = 2560000, cf = 120000000;
-    complex<double> acc = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 300.0, 16);
+    double const step = simulate_mean_step(f.frequency, cf, fs, f.frequency + 300.0, 16);
     for (int i = 0; i < FREQ_OFFSET_SETTLE_BATCHES; i++) {
-        freq_offset_commit(&f, 0.0, 0.0, 0, WAVE_BATCH, cf, fs, 3);
+        freq_offset_commit(&f, 0.0, 0, WAVE_BATCH, fs, 3);
     }
-    freq_offset_commit(&f, acc.real(), acc.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 3);
+    freq_offset_commit(&f, step * WAVE_BATCH, WAVE_BATCH, WAVE_BATCH, fs, 3);
     EXPECT_EQ(f.ppm_offset_updates.load(), 1u);
 }
 

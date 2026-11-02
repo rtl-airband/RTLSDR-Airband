@@ -110,13 +110,15 @@ void input_measure_consumed_samples(input_t* input, size_t nbytes) {
     }
 }
 
-float freq_offset_from_phase_increment(double acc_re, double acc_im, int channel_freq, int centerfreq, int sample_rate) {
+double freq_offset_expected_cycles(int channel_freq, int centerfreq, int sample_rate) {
     double const hop = round((double)sample_rate / (double)WAVE_RATE);
     double expected = (double)(channel_freq - centerfreq) * hop / (double)sample_rate;
-    expected -= floor(expected);
-    double delta = atan2(acc_im, acc_re) / (2.0 * M_PI) - expected;
-    delta -= floor(delta + 0.5);  // wrap to [-0.5, 0.5) cycles per frame
-    return (float)(delta * (double)sample_rate / hop);
+    return expected - floor(expected);
+}
+
+float freq_offset_from_mean_step(double mean_step_cycles, int sample_rate) {
+    double const hop = round((double)sample_rate / (double)WAVE_RATE);
+    return (float)(mean_step_cycles * (double)sample_rate / hop);
 }
 
 namespace {
@@ -129,7 +131,7 @@ void smooth_offset(std::atomic<float>& value, std::atomic<uint32_t>& updates, fl
 
 }  // namespace
 
-void freq_offset_commit(freq_t* fparms, double acc_re, double acc_im, int open_samples, int batch_samples, int centerfreq, int sample_rate, uint32_t tuning_generation) {
+void freq_offset_commit(freq_t* fparms, double step_sum_cycles, int open_samples, int batch_samples, int sample_rate, uint32_t tuning_generation) {
     if (fparms->ppm_offset_generation.load(memory_order_relaxed) != tuning_generation) {
         fparms->ppm_offset_updates.store(0, memory_order_relaxed);
         fparms->ppm_settle_batches = FREQ_OFFSET_SETTLE_BATCHES;
@@ -140,10 +142,10 @@ void freq_offset_commit(freq_t* fparms, double acc_re, double acc_im, int open_s
     if (settling) {
         fparms->ppm_settle_batches--;
     }
-    if (open_samples * 2 < batch_samples || (acc_re == 0.0 && acc_im == 0.0)) {
+    if (open_samples <= 0 || open_samples * 2 < batch_samples) {
         return;
     }
-    float const offset = freq_offset_from_phase_increment(acc_re, acc_im, fparms->frequency, centerfreq, sample_rate);
+    float const offset = freq_offset_from_mean_step(step_sum_cycles / open_samples, sample_rate);
     smooth_offset(fparms->freq_offset_hz, fparms->freq_offset_updates, offset);
     if (!settling) {
         smooth_offset(fparms->ppm_offset_hz, fparms->ppm_offset_updates, offset);

@@ -597,7 +597,8 @@ void* demodulate(void* params) {
                 AFC afc(dev, i);
                 int const batch_freq_idx = channel->freq_idx;
                 freq_t* fparms = channel->freqlist + batch_freq_idx;
-                channel->fo_acc_re = channel->fo_acc_im = 0.0;
+                channel->fo_step_sum = 0.0;
+                channel->fo_expected_cycles = freq_offset_expected_cycles(fparms->frequency, dev->input->centerfreq, dev->input->sample_rate);
                 channel->fo_open_samples = 0;
 
                 // set to NO_SIGNAL, will be updated to SIGNAL based on squelch below
@@ -710,8 +711,8 @@ void* demodulate(void* params) {
                         }
 
                         channel->axcindicate = SIGNAL;
-                        channel->fo_acc_re += (double)(raw_re * channel->fo_prev_re + raw_im * channel->fo_prev_im);
-                        channel->fo_acc_im += (double)(raw_im * channel->fo_prev_re - raw_re * channel->fo_prev_im);
+                        channel->fo_step_sum += freq_offset_step_cycles(raw_re * channel->fo_prev_re + raw_im * channel->fo_prev_im, raw_im * channel->fo_prev_re - raw_re * channel->fo_prev_im,
+                                                                        channel->fo_expected_cycles);
                         channel->fo_open_samples++;
                         if (channel->has_iq_outputs) {
                             channel->iq_out[2 * (j - AGC_EXTRA)] = real;
@@ -733,8 +734,7 @@ void* demodulate(void* params) {
                 memmove(channel->iq_in, channel->iq_in + 2 * WAVE_BATCH, (dev->waveend - WAVE_BATCH) * sizeof(float) * 2);
                 // An R_SCAN hop mid-batch mixes two frequencies' phase into one sum - drop it.
                 if (channel->freq_idx == batch_freq_idx) {
-                    freq_offset_commit(fparms, channel->fo_acc_re, channel->fo_acc_im, channel->fo_open_samples, WAVE_BATCH, dev->input->centerfreq, dev->input->sample_rate,
-                                       dev->input->tuning_generation.load(std::memory_order_acquire));
+                    freq_offset_commit(fparms, channel->fo_step_sum, channel->fo_open_samples, WAVE_BATCH, dev->input->sample_rate, dev->input->tuning_generation.load(std::memory_order_acquire));
                 }
 
 #ifdef WITH_BCM_VC
