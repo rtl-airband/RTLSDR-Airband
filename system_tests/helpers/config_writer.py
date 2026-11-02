@@ -95,6 +95,7 @@ def write_config(
     reserve_channels: int | None = None,
     shout_metadata_delay: int | None = None,
     split_times: dict | None = None,
+    extra_device_lines: list[str] | None = None,
 ) -> None:
     """
     Write a minimal libconfig++-format .conf file for rtl_airband.
@@ -170,6 +171,8 @@ def write_config(
         split_times: If provided, top-level split settings written as global
             config keys (split_min_file_time / split_max_file_time /
             split_max_idle_time / split_include_transmission_start).
+        extra_device_lines: Fully-formed "key = value;" lines added to the
+            device block, for device options with no dedicated argument.
     """
     lines = []
     if fft_size is not None:
@@ -219,6 +222,8 @@ def write_config(
     lines.append(f"  speedup_factor = {speedup_factor:.6f};")
     if reserve_channels is not None:
         lines.append(f"  reserve_channels = {reserve_channels};")
+    for extra in extra_device_lines or []:
+        lines.append(f"  {extra}")
     if mode == "scan":
         lines.append('  mode = "scan";')
     lines.append("  channels:")

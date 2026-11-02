@@ -182,6 +182,47 @@ TEST_F(DeviceStatsTest, freq_offset_commit_drops_mostly_closed_batches_and_smoot
     EXPECT_NEAR(f.freq_offset_hz.load(), 1200.0f, 1.0f) << "later estimates are smoothed";
 }
 
+TEST_F(DeviceStatsTest, tuning_change_restarts_the_ppm_estimate_after_settling) {
+    freq_t f = {};
+    f.frequency = 120250000;
+    int const fs = 2560000, cf = 120000000;
+    complex<double> before = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 1000.0, 16);
+    complex<double> after = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 100.0, 16);
+
+    for (int i = 0; i < 5; i++) {
+        freq_offset_commit(&f, before.real(), before.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 0);
+    }
+    EXPECT_EQ(f.ppm_offset_updates.load(), 5u);
+    EXPECT_NEAR(f.ppm_offset_hz.load(), 1000.0f, 0.5f);
+
+    // Generation 1: the first FREQ_OFFSET_SETTLE_BATCHES batches may still be pre-change
+    // samples, so even ones that look like the old tuning must not reach the ppm estimate.
+    for (int i = 0; i < FREQ_OFFSET_SETTLE_BATCHES; i++) {
+        freq_offset_commit(&f, before.real(), before.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 1);
+        EXPECT_EQ(f.ppm_offset_generation.load(), 1u);
+        EXPECT_EQ(f.ppm_offset_updates.load(), 0u) << i;
+    }
+    freq_offset_commit(&f, after.real(), after.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 1);
+    EXPECT_EQ(f.ppm_offset_updates.load(), 1u);
+    EXPECT_NEAR(f.ppm_offset_hz.load(), 100.0f, 0.5f) << "restarted, not smoothed with the old value";
+
+    // freq_offset_hz keeps its original meaning: every open batch, smoothed straight through.
+    EXPECT_EQ(f.freq_offset_updates.load(), 5u + FREQ_OFFSET_SETTLE_BATCHES + 1u);
+    EXPECT_GT(f.freq_offset_hz.load(), 500.0f);
+}
+
+TEST_F(DeviceStatsTest, settling_counts_closed_squelch_batches_too) {
+    freq_t f = {};
+    f.frequency = 120250000;
+    int const fs = 2560000, cf = 120000000;
+    complex<double> acc = simulate_phase_increment(f.frequency, cf, fs, f.frequency + 300.0, 16);
+    for (int i = 0; i < FREQ_OFFSET_SETTLE_BATCHES; i++) {
+        freq_offset_commit(&f, 0.0, 0.0, 0, WAVE_BATCH, cf, fs, 3);
+    }
+    freq_offset_commit(&f, acc.real(), acc.imag(), WAVE_BATCH, WAVE_BATCH, cf, fs, 3);
+    EXPECT_EQ(f.ppm_offset_updates.load(), 1u);
+}
+
 static int fake_get_settings(input_t* const, input_settings_t* out) {
     out->gain = 33.8f;
     out->gain_known = true;

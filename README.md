@@ -40,6 +40,10 @@ input (below), and `v5.3.0` introduced live reconfiguration and `send_tx_tags` s
   count, and how far each channel's received carrier sits from its configured frequency
   (to dial in `correction`), available live from the control socket's `status` command
   and in the stats file. See [Device Health Status](#device-health-status), below.
+- **Automatic PPM correction (`auto_ppm`)** — for RTL-SDR devices, keeps `correction`
+  tuned to the dongle's actual crystal error as it drifts, using the same per-channel carrier
+  offsets, with hard limits on how far it can go. See [Automatic PPM Correction](#automatic-ppm-correction),
+  below.
 - **SIGHUP config reload** — SIGHUP now triggers a clean restart to pick up config
   changes, instead of just exiting.
 - **Assorted stability fixes** — buffer overflow, thread-safety, and error-handling
@@ -129,6 +133,51 @@ new in this fork:
 
 The stats file also carries `device_peak_dbfs`, `device_clipped_sample_count` and
 `channel_freq_offset_hz` for graphing over time.
+
+### Automatic PPM Correction
+
+Cheap RTL-SDR dongles drift with temperature, so a `correction` measured once goes stale.
+With `auto_ppm` on, the instance keeps measuring how far each channel's received carrier
+sits from its configured frequency (the same `freq_offset_hz` as above), turns that into a
+ppm error for the dongle, and adjusts `correction` live.
+
+```
+devices: ({
+  type = "rtlsdr";
+  correction = 2;          # starting point; auto_ppm adjusts from here
+  auto_ppm = true;
+  # auto_ppm_interval = 30;  # seconds between evaluations (5 or more)
+  # auto_ppm_max_ppm = 100;  # never set a correction beyond +/- this (1-100)
+  # auto_ppm_max_step = 5;   # largest change in one adjustment
+  ...
+});
+```
+
+- **Every channel votes**, and the median wins. A channel whose estimate is more than
+  1.5 ppm from the median, such as an offset-carrier ATC site, is ignored. If the channels
+  don't agree, or a channel hasn't had enough transmissions since the last change, nothing
+  changes.
+- **Hard limits.** No correction outside `auto_ppm_max_ppm` is ever set, and that limit can't
+  be configured above 100 ppm. Estimates that would put the dongle more than 100 ppm off are
+  treated as bad measurements. A single adjustment moves at most `auto_ppm_max_step` ppm,
+  and auto_ppm does nothing for an error under 0.75 ppm.
+- **It turns itself off if things get worse.** If the error grows after two adjustments in a row,
+  auto_ppm puts the configured `correction` back, stops, and logs an error. `status` then
+  shows the reason. A `reload_diff` (or restart) re-arms it.
+- **Nothing is saved.** Each start begins from the config's `correction`. Every adjustment
+  is logged, e.g. `Device #0: auto_ppm correction 2 -> 4 ppm (...)`, and shown in `status`.
+  Copy the value into the config once it settles.
+- **Live changes.** `reload_diff` can turn auto_ppm on or off for a device that started with an
+  `auto_ppm` key (true or false). Changing its other settings needs a restart. While it's on,
+  `reload_diff` leaves an unchanged `correction` alone instead of resetting the learned
+  value. A changed `correction` is applied and becomes the new starting point.
+  `set_correction` still works, but refuses values outside `auto_ppm_max_ppm`.
+- **RTL-SDR only** for now. The config is rejected on other drivers.
+
+`status` reports an `auto_ppm` object per device (`residual_ppm`, `contributing`,
+`rejected`, `adjustments`, `clamped`, `disabled_reason`, ...). The stats file adds
+`device_ppm_correction`, `device_auto_ppm_residual_ppm` and
+`device_auto_ppm_adjustment_count`.
 
 ### Feature List
 
@@ -241,6 +290,7 @@ rather than just knowing that it is.
 **Process-wide**:
 | Metric | Meaning |
 |---|---|
+| `device_ppm_correction` / `device_auto_ppm_residual_ppm` / `device_auto_ppm_adjustment_count` | Per device (label `device`), only for devices with `auto_ppm` configured: the correction currently applied, the further correction auto_ppm estimates is still needed, and how many times it has adjusted. See [Automatic PPM Correction](#automatic-ppm-correction). |
 | `process_cpu_seconds_total` | Cumulative user+system CPU time for this process (standard Prometheus convention — `rate()` this in Grafana to get CPU utilization, correlatable against the buffer/output counters above). |
 | `rdio_scanner_queue_drop_count` / `rdio_scanner_upload_failure_count` | Completed transmissions dropped because the shared upload queue was full, and uploads that failed after exhausting retries. Shared by every `rdio_scanner`-configured output (one upload queue/worker thread process-wide). Requires the `RDIO_SCANNER` build option. |
 

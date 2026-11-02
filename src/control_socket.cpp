@@ -35,6 +35,7 @@
 #include <cstdio>   // snprintf
 #include <cstdlib>
 #include <cstring>
+#include "auto_ppm.h"
 #include "device_stats.h"
 #include "input-common.h"
 #include "live_reconfig.h"
@@ -299,6 +300,9 @@ string handle_set_correction(const map<string, string>& fields) {
         return error_response("missing or invalid 'correction'");
     }
     errno = 0;
+    if (!auto_ppm_correction_allowed(dev, correction)) {
+        return error_response("correction is outside this device's auto_ppm_max_ppm limit");
+    }
     if (input_set_correction(dev->input, correction) != 0) {
         if (errno == ENOTSUP) {
             return error_response("correction not supported by this driver");

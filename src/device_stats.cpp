@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include "auto_ppm.h"
 #include "rtl_airband.h"
 
 using namespace std;
@@ -118,15 +119,35 @@ float freq_offset_from_phase_increment(double acc_re, double acc_im, int channel
     return (float)(delta * (double)sample_rate / hop);
 }
 
-void freq_offset_commit(freq_t* fparms, double acc_re, double acc_im, int open_samples, int batch_samples, int centerfreq, int sample_rate) {
+namespace {
+
+void smooth_offset(std::atomic<float>& value, std::atomic<uint32_t>& updates, float offset) {
+    uint32_t const n = updates.load(memory_order_relaxed);
+    value.store(n == 0 ? offset : 0.8f * value.load(memory_order_relaxed) + 0.2f * offset, memory_order_relaxed);
+    updates.store(n + 1, memory_order_release);
+}
+
+}  // namespace
+
+void freq_offset_commit(freq_t* fparms, double acc_re, double acc_im, int open_samples, int batch_samples, int centerfreq, int sample_rate, uint32_t tuning_generation) {
+    if (fparms->ppm_offset_generation.load(memory_order_relaxed) != tuning_generation) {
+        fparms->ppm_offset_updates.store(0, memory_order_relaxed);
+        fparms->ppm_settle_batches = FREQ_OFFSET_SETTLE_BATCHES;
+        fparms->ppm_offset_generation.store(tuning_generation, memory_order_release);
+    }
+    // Counted per batch whether or not squelch is open, so settling takes the same wall time either way.
+    bool const settling = fparms->ppm_settle_batches > 0;
+    if (settling) {
+        fparms->ppm_settle_batches--;
+    }
     if (open_samples * 2 < batch_samples || (acc_re == 0.0 && acc_im == 0.0)) {
         return;
     }
     float const offset = freq_offset_from_phase_increment(acc_re, acc_im, fparms->frequency, centerfreq, sample_rate);
-    uint32_t const updates = fparms->freq_offset_updates.load(memory_order_relaxed);
-    float const smoothed = (updates == 0) ? offset : 0.8f * fparms->freq_offset_hz.load(memory_order_relaxed) + 0.2f * offset;
-    fparms->freq_offset_hz.store(smoothed, memory_order_relaxed);
-    fparms->freq_offset_updates.store(updates + 1, memory_order_release);
+    smooth_offset(fparms->freq_offset_hz, fparms->freq_offset_updates, offset);
+    if (!settling) {
+        smooth_offset(fparms->ppm_offset_hz, fparms->ppm_offset_updates, offset);
+    }
 }
 
 namespace {
@@ -176,7 +197,7 @@ string json_num(double v, const char* fmt = "%.2f") {
     return buf;
 }
 
-string channel_status_json(channel_t* channel, int index) {
+string channel_status_json(channel_t* channel, int index, uint32_t channel_generation) {
     string out = "{\"index\":" + to_string(index) + ",\"enabled\":" + (channel->enabled ? "true" : "false");
     int const freq_idx = channel->freq_idx;
     out += ",\"freq_idx\":" + to_string(freq_idx);
@@ -195,6 +216,10 @@ string channel_status_json(channel_t* channel, int index) {
         uint32_t const updates = f->freq_offset_updates.load(memory_order_acquire);
         out += ",\"freq_offset_hz\":" + (updates > 0 ? json_num(f->freq_offset_hz.load(memory_order_relaxed), "%.1f") : string("null"));
         out += ",\"freq_offset_updates\":" + to_string(updates);
+        bool const ppm_current = f->ppm_offset_generation.load(memory_order_acquire) == channel_generation;
+        uint32_t const ppm_updates = ppm_current ? f->ppm_offset_updates.load(memory_order_acquire) : 0;
+        out += ",\"ppm_offset_hz\":" + (ppm_updates > 0 ? json_num(f->ppm_offset_hz.load(memory_order_relaxed), "%.1f") : string("null"));
+        out += ",\"ppm_offset_updates\":" + to_string(ppm_updates);
         out += "}";
     }
     return out + "]}";
@@ -210,7 +235,11 @@ string device_status_json(device_t* dev, int index) {
     out += ",\"sample_rate\":" + to_string(input->sample_rate);
 
     input_settings_t settings;
-    bool const have_settings = input->get_settings != NULL && input->get_settings(input, &settings) == 0;
+    bool have_settings = false;
+    if (input->get_settings != NULL) {
+        lock_guard<recursive_mutex> control(input_control_mutex());
+        have_settings = input->get_settings(input, &settings) == 0;
+    }
     out += ",\"gain\":" + (have_settings && settings.gain_known ? json_num(settings.gain, "%.1f") : string("null"));
     out += ",\"correction\":" + (have_settings ? json_num(settings.correction, "%g") : string("null"));
     out += ",\"bandwidth\":" + (have_settings ? to_string(settings.bandwidth) : string("null"));
@@ -222,6 +251,8 @@ string device_status_json(device_t* dev, int index) {
     out += ",\"buffer_underruns\":" + to_string(input->underrun_count);
     out += ",\"retune_failures\":" + to_string(input->centerfreq_retune_failure_count);
     out += ",\"output_overruns\":" + to_string(dev->output_overrun_count);
+    out += ",\"auto_ppm\":" + auto_ppm_status_json(dev, auto_ppm_now());
+    uint32_t const generation = input->tuning_generation.load(memory_order_acquire);
 
     out += ",\"channels\":[";
     int const channel_count = dev->channel_count;
@@ -229,7 +260,7 @@ string device_status_json(device_t* dev, int index) {
         if (j > 0) {
             out += ",";
         }
-        out += channel_status_json(dev->channels + j, j);
+        out += channel_status_json(dev->channels + j, j, generation);
     }
     return out + "]}";
 }

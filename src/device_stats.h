@@ -52,10 +52,17 @@ void input_measure_consumed_samples(input_t* input, size_t nbytes);
 // configured frequency. Unambiguous to within +/- half the frame rate (WAVE_RATE / 2).
 float freq_offset_from_phase_increment(double acc_re, double acc_im, int channel_freq, int centerfreq, int sample_rate);
 
+// Batches skipped after a tuning change before the auto_ppm estimate (freq_t::ppm_offset_*)
+// resumes: samples already buffered between the hardware and the demod thread were taken under
+// the old tuning. 2 s worth (WAVE_BATCH is WAVE_RATE / 8).
+#define FREQ_OFFSET_SETTLE_BATCHES 16
+
 // Commits one demod batch's phase-increment sum into a frequency's smoothed offset estimate.
 // open_samples is how many of the batch's samples had squelch open; batches below half open are
-// dropped since the sum is then mostly noise.
-void freq_offset_commit(struct freq_t* fparms, double acc_re, double acc_im, int open_samples, int batch_samples, int centerfreq, int sample_rate);
+// dropped since the sum is then mostly noise. tuning_generation is the device's
+// input_t::tuning_generation; when it changes, the auto_ppm estimate restarts after
+// FREQ_OFFSET_SETTLE_BATCHES batches (freq_offset_hz itself is unaffected).
+void freq_offset_commit(struct freq_t* fparms, double acc_re, double acc_im, int open_samples, int batch_samples, int centerfreq, int sample_rate, uint32_t tuning_generation = 0);
 
 // JSON body of the control socket's read-only "status" command: one object per device with its
 // current tuning, sample levels and counters, plus per-channel levels and offsets.

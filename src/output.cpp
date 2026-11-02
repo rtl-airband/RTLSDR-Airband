@@ -49,6 +49,7 @@
 #include <ctime>
 #include <sstream>
 #include <string>
+#include "auto_ppm.h"
 #include "config.h"
 #include "helper_functions.h"
 #include "input-common.h"
@@ -1083,6 +1084,55 @@ static void output_device_centerfreq_retune_failures(FILE* f) {
     fprintf(f, "\n");
 }
 
+static void output_device_auto_ppm(FILE* f) {
+    bool any = false;
+    for (int i = 0; i < device_count; i++) {
+        any = any || devices[i].auto_ppm != NULL;
+    }
+    if (!any) {
+        return;
+    }
+    std::string correction, residual, adjustments;
+    char line[128];
+    for (int i = 0; i < device_count; i++) {
+        AutoPpmMetrics m;
+        if (!auto_ppm_metrics(devices + i, &m)) {
+            continue;
+        }
+        input_t* input = devices[i].input;
+        input_settings_t settings;
+        bool have_settings = false;
+        {
+            std::lock_guard<std::recursive_mutex> control(input_control_mutex());
+            have_settings = input->get_settings(input, &settings) == 0;
+        }
+        if (have_settings) {
+            snprintf(line, sizeof(line), "device_ppm_correction{device=\"%d\"}\t%g\n", i, settings.correction);
+            correction += line;
+        }
+        if (m.residual_valid) {
+            snprintf(line, sizeof(line), "device_auto_ppm_residual_ppm{device=\"%d\"}\t%.2f\n", i, m.residual_ppm);
+            residual += line;
+        }
+        snprintf(line, sizeof(line), "device_auto_ppm_adjustment_count{device=\"%d\"}\t%llu\n", i, (unsigned long long)m.adjustments);
+        adjustments += line;
+    }
+    fprintf(f,
+            "# HELP device_ppm_correction Frequency correction currently applied to the tuner, in ppm. Only reported for "
+            "devices with auto_ppm configured.\n"
+            "# TYPE device_ppm_correction gauge\n%s\n",
+            correction.c_str());
+    fprintf(f,
+            "# HELP device_auto_ppm_residual_ppm Correction auto_ppm still estimates is needed on top of the current one, "
+            "from the median of the channels' carrier offsets. Absent until enough transmissions have been measured.\n"
+            "# TYPE device_auto_ppm_residual_ppm gauge\n%s\n",
+            residual.c_str());
+    fprintf(f,
+            "# HELP device_auto_ppm_adjustment_count Number of times auto_ppm has changed the device's correction.\n"
+            "# TYPE device_auto_ppm_adjustment_count counter\n%s\n",
+            adjustments.c_str());
+}
+
 static void output_process_cpu_seconds(FILE* f) {
     struct rusage ru;
     if (getrusage(RUSAGE_SELF, &ru) != 0) {
@@ -1516,6 +1566,7 @@ void write_stats_file(timeval* last_stats_write) {
     output_device_buffer_overflows(file);
     output_device_buffer_underruns(file);
     output_device_centerfreq_retune_failures(file);
+    output_device_auto_ppm(file);
     output_device_peak_levels(file);
     output_device_clipped_samples(file);
     output_output_overruns(file);

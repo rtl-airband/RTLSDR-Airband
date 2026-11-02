@@ -118,6 +118,10 @@ def test_status_reports_tuning_and_recovers_carrier_offset(
     assert freq["freq"] == CENTERFREQ_HZ + CHANNEL_OFFSET_HZ
     assert freq["freq_offset_updates"] > 0, freq
     assert freq["freq_offset_hz"] == pytest.approx(CARRIER_ERROR_HZ, abs=25), freq
+    # The auto_ppm copy of the estimate tracks the same carrier (no tuning change in this run).
+    assert freq["ppm_offset_updates"] > 0, freq
+    assert freq["ppm_offset_hz"] == pytest.approx(CARRIER_ERROR_HZ, abs=25), freq
+    assert dev["auto_ppm"] is None, dev
 
 
 def test_status_counts_clipped_samples(

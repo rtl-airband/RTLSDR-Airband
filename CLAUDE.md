@@ -739,9 +739,10 @@ and signal levels and per-device buffer counters only, and the control socket ha
   lands exactly on a bin center; only the 7-term Blackman-Harris window's main lobe makes the
   carrier visible there, so the unit test's simulated DFT has to apply the same window.
 - **Driver settings readback.** New nullable `input_t::get_settings` hook (rtlsdr, mirisdr,
-  soapysdr) reports gain / correction / tuner bandwidth from the driver's `dev_data`. Only ever
-  called from the control socket thread, the same thread that issues live `set_*` calls, so there's
-  no concurrent writer. rtlsdr now stores the gain the tuner actually took (nearest supported step)
+  soapysdr) reports gain / correction / tuner bandwidth from the driver's `dev_data`. Originally
+  called only from the control socket thread; since item 45 every caller holds
+  `input_control_mutex()`, the lock the live `set_*` wrappers take, so there's no concurrent
+  writer. rtlsdr now stores the gain the tuner actually took (nearest supported step)
   at init, as `rtlsdr_set_gain` already did. mirisdr's correction is in Hz (libmirisdr has no ppm).
 - **Control socket `status` command** (read-only): `{"ok":true,"version":...,"devices":[{index,
   driver,state,mode,centerfreq,sample_rate,gain,correction,bandwidth,peak_dbfs,clipped_samples,
@@ -760,7 +761,7 @@ and signal levels and per-device buffer counters only, and the control socket ha
 **44. `rtl_airband -v` prints a `Features:` line** (`fork_features()` in
 `src/helper_functions.cpp`, printed from `main()`). The version line is unchanged; a second line
 reads `Features: fork control_socket device_status reserve mixer_remote send_tx_tags stats_http
-json_log post_write_script`, followed by whichever optional build components are compiled in
+json_log post_write_script auto_ppm` (`auto_ppm` added by item 45), followed by whichever optional build components are compiled in
 (`rdio_scanner`, `soapysdr`, `mirisdr`, `pulseaudio`, `nfm`).
 - **Why:** upstream now tags in the same `v6.x` range as this fork (upstream `v6.2.0`), so a
   version number can no longer tell the two apart. rtl-airband-panel reads this line to decide
@@ -768,6 +769,59 @@ json_log post_write_script`, followed by whichever optional build components are
   doesn't.
 - **The names are an interface.** Add new names, but never rename or remove one. The line
   always starts with `fork`. Unit tested in `test_helper_functions.cpp`.
+
+**45. Automatic PPM correction (`auto_ppm`)** (`src/auto_ppm.{h,cpp}`, new; `src/device_stats.{h,cpp}`,
+`src/input-common.{h,cpp}`, `src/config.cpp`, `src/live_reconfig.{h,cpp}`, `src/control_socket.cpp`,
+`src/output.cpp`, `src/rtl_airband.{cpp,h}`) — closes the loop between item 43's per-frequency
+carrier offsets and item 35's live correction. Device keys: `auto_ppm` (bool), `auto_ppm_interval`
+(s, default 30, ≥5), `auto_ppm_max_ppm` (default 100, 1..100), `auto_ppm_max_step` (default 5).
+- **Drivers:** only those with both `set_correction` and `get_settings` hooks, i.e. rtlsdr today;
+  parse rejects the key elsewhere (`system_tests/tests/test_auto_ppm.py`). Adding soapysdr needs a
+  float-ppm `set_correction` hook. mirisdr's correction is Hz, not ppm.
+- **Math:** residual ppm = −offset_hz / channel_freq × 1e6 (tuner LO and ADC share one rtlsdr
+  crystal, so the error scales with the channel frequency, not centerfreq); new correction =
+  current + residual. Matches librtlsdr's convention (`corr` = how fast the crystal runs).
+  **The sign still needs confirming on real hardware** before a production rollout: the divergence
+  guard below is the backstop if it's wrong.
+- **Decision** (`auto_ppm_decide()`, pure, unit tested in `src/test_auto_ppm.cpp`): a frequency votes
+  once it has ≥20 offset updates since the last tuning change. Estimates implying an absolute
+  correction beyond ±100 ppm (`AUTO_PPM_HARD_LIMIT`) are dropped individually. The rest are
+  combined by median: anything over 1.5 ppm from it is an outlier (offset-carrier ATC sites are
+  ±2.5–7.5 kHz, ~20–60 ppm). It holds when the survivors spread over 2 ppm, or when there are
+  more than two voters but fewer than two survivors. Then a 0.75 ppm deadband, a step limit, and
+  a clamp to ±`auto_ppm_max_ppm`.
+  **Divergence guard:** if the residual grows (by >0.25 ppm) after two consecutive steps, it
+  reverts to the configured correction and trips (`disabled_reason` in status) until a
+  `reload_diff` or restart.
+- **Estimator reset:** item 43's `freq_offset_hz` EMA keeps pre-change samples, so it can't feed a
+  closed loop directly. `input_t::tuning_generation` is bumped after every successful centerfreq,
+  correction or sample_rate change. `freq_offset_commit()` keeps a second per-frequency EMA
+  (`freq_t::ppm_offset_hz/updates/generation`) that restarts on a generation change after
+  skipping `FREQ_OFFSET_SETTLE_BATCHES` (16, 2 s) batches of already-buffered old-tuning samples.
+  `freq_offset_hz` itself is unchanged. R_SCAN bumps the generation on every hop, so only the
+  current scan frequency ever votes.
+- **Threading:** one `auto_ppm` thread (started only if a device has the key), ticking every 1 s,
+  joined in `main()` before devices stop. New process-wide `input_control_mutex()` (recursive,
+  function-local static, so hand-built test `input_t`s need no setup) serializes every live driver
+  control call: the `input_set_*` wrappers, `get_settings` callers, and `device_apply_sample_rate()`
+  (held across its whole stop/reopen, since `dev_data->dev` is replaced there). It also closes a
+  pre-existing, never-hit overlap between control-socket `set_*` and the demod thread's live retune.
+  Lock order: `auto_ppm_device::lock`, then `input_control_mutex()`.
+- **reload_diff:** `auto_ppm` toggles live (and re-arms a tripped device) only when the device
+  started with the key present. Turning it on for a device that didn't, or changing
+  interval/max_ppm/max_step, goes under `skipped_requires_restart`. While it stays on, an unchanged
+  config `correction` is no longer reapplied (that would discard the learned value). It's reported
+  as `correction unchanged in config, left to auto_ppm`. A changed one is applied and becomes the
+  new revert target; one outside the limit is refused. `set_correction` refuses values outside
+  `auto_ppm_max_ppm` while auto_ppm is on.
+- **Observability:** status JSON `auto_ppm` object per device (`null` if unconfigured) and
+  `ppm_offset_hz`/`ppm_offset_updates` per frequency; stats file `device_ppm_correction`,
+  `device_auto_ppm_residual_ppm`, `device_auto_ppm_adjustment_count` (auto_ppm devices only);
+  LOG_INFO per adjustment, LOG_WARNING once per clamp episode, LOG_ERR on a trip.
+- **No persistence:** each start begins from config `correction`.
+- Side fix: `DeviceConfigSnapshot::has_gain`/`gain` are now default-initialized. Hand-built test
+  snapshots copied them uninitialized (UBSan "invalid bool"), the same trap the struct's other
+  defaulted fields already document.
 
 ### Do not import from `yegors`
 

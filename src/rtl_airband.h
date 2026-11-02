@@ -400,6 +400,14 @@ struct freq_t {
     // threads; meaningless until freq_offset_updates is non-zero.
     std::atomic<float> freq_offset_hz;
     std::atomic<uint32_t> freq_offset_updates;
+    // The same estimate restarted on every input_t::tuning_generation change, for auto_ppm
+    // (auto_ppm.cpp): freq_offset_hz above still carries pre-change samples. ppm_offset_updates
+    // is reset to 0 before ppm_offset_generation is published, so a reader that sees the current
+    // generation never pairs it with a stale count. ppm_settle_batches is demod-thread only.
+    std::atomic<float> ppm_offset_hz;
+    std::atomic<uint32_t> ppm_offset_updates;
+    std::atomic<uint32_t> ppm_offset_generation;
+    int ppm_settle_batches;
 };
 struct channel_t {
     float wavein[WAVE_LEN];      // FFT output waveform
@@ -557,6 +565,7 @@ struct device_t {
     std::atomic<bool> sample_rate_apply_failed;
     enum rec_modes mode;
     size_t output_overrun_count;
+    struct auto_ppm_device* auto_ppm;  // NULL unless the device block has an auto_ppm key (auto_ppm.h)
 };
 
 struct mixinput_t {

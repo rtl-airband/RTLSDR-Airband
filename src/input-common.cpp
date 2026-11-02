@@ -115,7 +115,13 @@ int input_stop(input_t* const input) {
     return 0;
 }
 
+std::recursive_mutex& input_control_mutex() {
+    static std::recursive_mutex m;
+    return m;
+}
+
 int input_set_centerfreq(input_t* const input, int const centerfreq) {
+    std::lock_guard<std::recursive_mutex> control(input_control_mutex());
     assert(input != NULL);
     assert(input->dev_data != NULL);
     if (input->state != INPUT_RUNNING) {
@@ -132,10 +138,12 @@ int input_set_centerfreq(input_t* const input, int const centerfreq) {
         return -1;
     }
     input->centerfreq = centerfreq;
+    input->tuning_generation.fetch_add(1, std::memory_order_release);
     return 0;
 }
 
 int input_set_gain(input_t* const input, float const gain) {
+    std::lock_guard<std::recursive_mutex> control(input_control_mutex());
     assert(input != NULL);
     assert(input->dev_data != NULL);
     if (input->set_gain == NULL) {
@@ -155,6 +163,7 @@ int input_set_gain(input_t* const input, float const gain) {
 }
 
 int input_set_bandwidth(input_t* const input, int const bandwidth) {
+    std::lock_guard<std::recursive_mutex> control(input_control_mutex());
     assert(input != NULL);
     assert(input->dev_data != NULL);
     if (input->set_bandwidth == NULL) {
@@ -174,6 +183,7 @@ int input_set_bandwidth(input_t* const input, int const bandwidth) {
 }
 
 int input_set_correction(input_t* const input, int const correction) {
+    std::lock_guard<std::recursive_mutex> control(input_control_mutex());
     assert(input != NULL);
     assert(input->dev_data != NULL);
     if (input->set_correction == NULL) {
@@ -189,5 +199,6 @@ int input_set_correction(input_t* const input, int const correction) {
         // stream died, so it must not be treated as fatal here either.
         return -1;
     }
+    input->tuning_generation.fetch_add(1, std::memory_order_release);
     return 0;
 }

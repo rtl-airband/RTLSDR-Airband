@@ -59,6 +59,7 @@
 #include <ctime>
 #include <iostream>
 #include <libconfig.h++>
+#include "auto_ppm.h"
 #include "control_socket.h"
 #include "device_stats.h"
 #include "helper_functions.h"
@@ -732,7 +733,8 @@ void* demodulate(void* params) {
                 memmove(channel->iq_in, channel->iq_in + 2 * WAVE_BATCH, (dev->waveend - WAVE_BATCH) * sizeof(float) * 2);
                 // An R_SCAN hop mid-batch mixes two frequencies' phase into one sum - drop it.
                 if (channel->freq_idx == batch_freq_idx) {
-                    freq_offset_commit(fparms, channel->fo_acc_re, channel->fo_acc_im, channel->fo_open_samples, WAVE_BATCH, dev->input->centerfreq, dev->input->sample_rate);
+                    freq_offset_commit(fparms, channel->fo_acc_re, channel->fo_acc_im, channel->fo_open_samples, WAVE_BATCH, dev->input->centerfreq, dev->input->sample_rate,
+                                       dev->input->tuning_generation.load(std::memory_order_acquire));
                 }
 
 #ifdef WITH_BCM_VC
@@ -1280,6 +1282,8 @@ int main(int argc, char* argv[]) {
 
     stats_http_start();
 
+    auto_ppm_start();
+
     if (control_socket_path) {
         control_socket_start(control_socket_path);
     }
@@ -1299,6 +1303,8 @@ int main(int argc, char* argv[]) {
     }
 
     log(LOG_INFO, "Cleaning up\n");
+    // Before the devices stop: an evaluation in flight issues driver control calls.
+    auto_ppm_shutdown();
     for (int i = 0; i < device_count; i++) {
         if (devices[i].mode == R_SCAN)
             pthread_join(devices[i].controller_thread, NULL);
