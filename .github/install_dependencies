@@ -21,6 +21,7 @@ case "${unameOut}" in
             librtlsdr-dev \
             libsoapysdr-dev \
             libpulse-dev \
+            libgoogle-perftools-dev \
             libopenblas0-pthread
         ;;
 
