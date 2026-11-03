@@ -120,4 +120,17 @@ int input_stop(input_t* const input);
 // holder can call the input_set_* wrappers, which take it themselves.
 std::recursive_mutex& input_control_mutex();
 
+// RTL-SDR USB transfer sizing for input-rtlsdr.cpp, kept here because the unit tests don't link
+// the rtlsdr driver. A fixed 320000-byte transfer is 156 ms of samples at 1.024 Msps, longer than
+// one 125 ms audio batch, so one transfer could complete two batches at once and the second
+// overran the single demod->output slot. The auto size is half a batch.
+#define RTLSDR_MAX_AUTO_USB_BUF_LEN 320000  // the old fixed size, still used at >= 2.56 Msps
+#define RTLSDR_MAX_USB_BUF_LEN 16777216     // upper bound for an explicit buffer_size
+#define RTLSDR_DEFAULT_LIBUSB_BUFFER_COUNT 10
+size_t rtlsdr_auto_usb_buf_len(int sample_rate);
+// The buffer count that keeps total USB buffering at the old 10 x 320000 bytes, so a smaller
+// transfer doesn't shrink the cushion against RX-thread stalls (or grow usbfs memory use).
+int rtlsdr_auto_usb_buf_count(size_t buf_len);
+bool rtlsdr_valid_usb_buf_len(long long buf_len);
+
 #endif /* _INPUT_COMMON_H */

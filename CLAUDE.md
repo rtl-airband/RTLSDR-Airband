@@ -774,7 +774,7 @@ and signal levels and per-device buffer counters only, and the control socket ha
 **44. `rtl_airband -v` prints a `Features:` line** (`fork_features()` in
 `src/helper_functions.cpp`, printed from `main()`). The version line is unchanged; a second line
 reads `Features: fork control_socket device_status reserve mixer_remote send_tx_tags stats_http
-json_log post_write_script auto_ppm` (`auto_ppm` added by item 45), followed by whichever optional build components are compiled in
+json_log post_write_script auto_ppm usb_chunk_sizing` (`auto_ppm` added by item 45, `usb_chunk_sizing` by item 46), followed by whichever optional build components are compiled in
 (`rdio_scanner`, `soapysdr`, `pulseaudio`, `nfm`). `mirisdr` was also in that list until
 upstream v7.0.0 removed the driver. It was a build-component name, not a fork capability, so its
 disappearance doesn't break the never-remove rule below, which covers the fork capability names.
@@ -862,6 +862,44 @@ carrier offsets and item 35's live correction. Device keys: `auto_ppm` (bool), `
 - Side fix: `DeviceConfigSnapshot::has_gain`/`gain` are now default-initialized. Hand-built test
   snapshots copied them uninitialized (UBSan "invalid bool"), the same trap the struct's other
   defaulted fields already document.
+
+**46. RTL-SDR USB transfer size follows the sample rate** (`src/input-common.{h,cpp}`,
+`src/input-rtlsdr.{h,cpp}`) — upstream always asked librtlsdr for 320000-byte transfers. At
+1.024 Msps that is 156 ms of samples, longer than one 125 ms audio batch (`WAVE_BATCH`), and the
+demod loop emits batches unpaced, so roughly one transfer in four completed two batches within
+0–10 ms. The demod→output handoff is a single slot (`device_t::waveavail`), so the second batch
+overran whenever the output pass hadn't finished.
+- **Found by measuring production**, not by guessing. Observe-only bpftrace on the prod host
+  showed NFS file I/O (worst 15 ms) and scheduler delay (worst 6 ms) nowhere near the 125 ms
+  budget, while the overrun rate tracked sample rate: 1.024 Msps instances 57–248/h, 2.56 Msps
+  instances (whose transfer was already 62.5 ms) 6.5–10.5/h despite having the most file
+  outputs. The output thread's wakeup gaps were ~156 ms or 0–10 ms, never ~125 ms.
+- **The fix**: `rtlsdr_auto_usb_buf_len()` sizes each transfer to half a batch, rounded down to
+  librtlsdr's 512-byte multiple and clamped to 16384..320000 (1.024 M → 128000, 1.4 M → 174592,
+  2.0 M → 249856, 2.56 M and up → 320000, unchanged). `rtlsdr_auto_usb_buf_count()` raises the
+  default buffer count so total buffering stays at the old 10 × 320000 bytes (1.024 M → 25), so
+  neither the cushion against RX stalls nor usbfs memory use changes. Both are computed in
+  `rtlsdr_rx_thread()`, not at parse time, so item 36's live `sample_rate` change gets a size for
+  the new rate. The file driver already does the same thing (`src/input-file.cpp`, one batch per
+  read).
+- **Config**: new optional device key `buffer_size` (bytes, positive multiple of 512, at most
+  16 MiB) overrides the auto length; `buffer_size = 320000; buffers = 10;` restores the old
+  behavior exactly. An explicit `buffers` is still honored as given. Like `buffers`, it applies
+  only at RX start and `reload_diff` ignores it.
+- **Hardware validation** (dev box, two Nooelec NESDR SMArt v5, R820T, 1.024 Msps, six NFM
+  channels with continuous file outputs): old sizing showed 483–488 back-to-back output wakeups
+  in 5 min; auto sizing showed 1, with gaps centered on 125 ms. Confirmed sequentially on one
+  dongle and simultaneously on two, same signal. No input buffer overflows; recorded audio
+  length matched wall time.
+- **CPU**: `perf stat` showed the same work (instructions +0.6%), but reported CPU time rose
+  ~35% (5.0% → 6.8% of a core on the dev box) because the evenly spread load lets the CPU clock
+  stay lower (1.63 vs 2.12 GHz average). Expect the same reading on prod; it's frequency
+  scaling, not extra cost.
+- Doesn't touch SoapySDR. The planned demod→output ring buffer would absorb bursts from any
+  driver.
+- Tests: `src/test_input_common.cpp` (sizing and validation); `system_tests/tests/test_rtlsdr_buffer_size.py`
+  (parser rejects bad `buffer_size` through the real binary, before any device is opened). The
+  system test caught a real bug: libconfig throws on `(long long)` of a plain int setting.
 
 ### Do not import from `yegors`
 

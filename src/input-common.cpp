@@ -27,6 +27,7 @@
 #include <stdlib.h>  // free
 #include <string.h>
 #include <iostream>
+#include "rtl_airband.h"  // WAVE_BATCH, WAVE_RATE
 
 using namespace std;
 
@@ -201,4 +202,33 @@ int input_set_correction(input_t* const input, int const correction) {
     }
     input->tuning_generation.fetch_add(1, std::memory_order_release);
     return 0;
+}
+
+size_t rtlsdr_auto_usb_buf_len(int sample_rate) {
+    const size_t urb_len = 16384;
+    if (sample_rate <= 0) {
+        return urb_len;
+    }
+    // U8 I/Q is 2 bytes per sample, and half a batch is WAVE_BATCH / 2 output samples.
+    size_t len = (size_t)sample_rate * (WAVE_BATCH) / (WAVE_RATE);
+    len -= len % 512;
+    if (len < urb_len) {
+        return urb_len;
+    }
+    if (len > RTLSDR_MAX_AUTO_USB_BUF_LEN) {
+        return RTLSDR_MAX_AUTO_USB_BUF_LEN;
+    }
+    return len;
+}
+
+int rtlsdr_auto_usb_buf_count(size_t buf_len) {
+    const size_t total = (size_t)RTLSDR_DEFAULT_LIBUSB_BUFFER_COUNT * RTLSDR_MAX_AUTO_USB_BUF_LEN;
+    if (buf_len == 0) {
+        return RTLSDR_DEFAULT_LIBUSB_BUFFER_COUNT;
+    }
+    return (int)((total + buf_len - 1) / buf_len);
+}
+
+bool rtlsdr_valid_usb_buf_len(long long buf_len) {
+    return buf_len > 0 && buf_len % 512 == 0 && buf_len <= RTLSDR_MAX_USB_BUF_LEN;
 }

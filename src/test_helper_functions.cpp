@@ -481,7 +481,7 @@ TEST_F(HelperFunctionsTest, setting_as_bool_or_rejects_non_bool) {
 TEST_F(HelperFunctionsTest, fork_features_names_the_fork_and_its_capabilities) {
     std::string const features = " " + fork_features() + " ";
     EXPECT_EQ(fork_features().rfind("fork ", 0), 0u);
-    for (const char* name : {"control_socket", "device_status", "reserve", "mixer_remote", "send_tx_tags", "stats_http", "json_log", "post_write_script", "auto_ppm"}) {
+    for (const char* name : {"control_socket", "device_status", "reserve", "mixer_remote", "send_tx_tags", "stats_http", "json_log", "post_write_script", "auto_ppm", "usb_chunk_sizing"}) {
         EXPECT_NE(features.find(std::string(" ") + name + " "), std::string::npos) << name;
     }
 #ifdef NFM

@@ -45,6 +45,11 @@ input (below), and `v5.3.0` introduced live reconfiguration and `send_tx_tags` s
   tuned to the dongle's actual crystal error as it drifts, using the same per-channel carrier
   offsets, with hard limits on how far it can go. See [Automatic PPM Correction](#automatic-ppm-correction),
   below.
+- **RTL-SDR USB transfers sized to the sample rate** — each USB transfer now holds half an
+  audio batch (62.5 ms) instead of a fixed 320000 bytes, which at 1.024 Msps was 156 ms and
+  made the demod emit two batches back to back, a main cause of `output_overrun_count`. Total
+  USB buffering is unchanged. `buffer_size` (bytes, a multiple of 512) on an `rtlsdr` device
+  overrides it; `buffer_size = 320000; buffers = 10;` restores the old behavior.
 - **SIGHUP config reload** — SIGHUP now triggers a clean restart to pick up config
   changes, instead of just exiting.
 - **Assorted stability fixes** — buffer overflow, thread-safety, and error-handling

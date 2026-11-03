@@ -203,8 +203,14 @@ void* rtlsdr_rx_thread(void* ctx) {
     rtlsdr_dev_data_t* dev_data = (rtlsdr_dev_data_t*)input->dev_data;
     assert(dev_data->dev != NULL);
 
+    // Sized here rather than at parse time so a live sample_rate change, which restarts this
+    // thread, gets a transfer size for the new rate.
+    uint32_t buf_len = dev_data->buf_len > 0 ? (uint32_t)dev_data->buf_len : (uint32_t)rtlsdr_auto_usb_buf_len(input->sample_rate);
+    uint32_t buf_count = dev_data->bufcnt > 0 ? (uint32_t)dev_data->bufcnt : (uint32_t)rtlsdr_auto_usb_buf_count(buf_len);
+    log(LOG_INFO, "RTLSDR device #%d: USB transfers of %u bytes (%.1f ms) x %u buffers\n", dev_data->index, buf_len, 1000.0 * buf_len / (2.0 * input->sample_rate), buf_count);
+
     input->state = INPUT_RUNNING;
-    if (rtlsdr_read_async(dev_data->dev, rtlsdr_callback, ctx, dev_data->bufcnt, RTLSDR_BUFSIZE) < 0) {
+    if (rtlsdr_read_async(dev_data->dev, rtlsdr_callback, ctx, buf_count, buf_len) < 0) {
         log(LOG_ERR, "RTLSDR device #%d: async read failed, disabling\n", dev_data->index);
         input->state = INPUT_FAILED;
     }
@@ -329,6 +335,14 @@ int rtlsdr_parse_config(input_t* const input, libconfig::Setting& cfg) {
             error();
         }
     }
+    if (cfg.exists("buffer_size")) {
+        long long buf_len = (int)cfg["buffer_size"];
+        if (!rtlsdr_valid_usb_buf_len(buf_len)) {
+            cerr << "RTLSDR configuration error: buffer_size must be a positive multiple of 512, at most " << RTLSDR_MAX_USB_BUF_LEN << "\n";
+            error();
+        }
+        dev_data->buf_len = (int)buf_len;
+    }
     return 0;
 }
 
@@ -336,7 +350,6 @@ MODULE_EXPORT input_t* rtlsdr_input_new() {
     rtlsdr_dev_data_t* dev_data = (rtlsdr_dev_data_t*)XCALLOC(1, sizeof(rtlsdr_dev_data_t));
     dev_data->index = -1;  // invalid default receiver index
     dev_data->gain = -1;   // invalid default gain value
-    dev_data->bufcnt = RTLSDR_DEFAULT_LIBUSB_BUFFER_COUNT;
     /*	return &( input_t ){
                     .dev_data = dev_data,
                     .state = INPUT_UNKNOWN,

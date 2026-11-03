@@ -93,7 +93,7 @@ string make_icecast_mountpoint(const string& mountpoint) {
 }
 
 std::string fork_features() {
-    std::string features = "fork control_socket device_status reserve mixer_remote send_tx_tags stats_http json_log post_write_script auto_ppm";
+    std::string features = "fork control_socket device_status reserve mixer_remote send_tx_tags stats_http json_log post_write_script auto_ppm usb_chunk_sizing";
 #ifdef WITH_RDIO_SCANNER
     features += " rdio_scanner";
 #endif

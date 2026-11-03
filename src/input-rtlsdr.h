@@ -18,8 +18,6 @@
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
 #include <rtl-sdr.h>  // rtlsdr_dev_t
-#define RTLSDR_BUFSIZE 320000
-#define RTLSDR_DEFAULT_LIBUSB_BUFFER_COUNT 10
 #define RTLSDR_DEFAULT_SAMPLE_RATE 2560000
 
 typedef struct {
@@ -29,5 +27,6 @@ typedef struct {
     int correction;     // PPM correction
     int gain;           // gain in tenths of dB
     int bandwidth;      // tuner bandwidth in Hz, 0 = automatic (librtlsdr default)
-    int bufcnt;         // libusb buffer count
+    int bufcnt;         // libusb buffer count, 0 = rtlsdr_auto_usb_buf_count()
+    int buf_len;        // libusb buffer length in bytes, 0 = rtlsdr_auto_usb_buf_len()
 } rtlsdr_dev_data_t;
