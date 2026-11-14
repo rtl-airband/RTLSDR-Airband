@@ -954,6 +954,85 @@ static void output_device_buffer_overflows(FILE* f) {
     fprintf(f, "\n");
 }
 
+#ifdef WITH_PULSEAUDIO
+typedef void (*pulse_metric_fn)(FILE* f, const pulse_data* pdata);
+
+static void for_each_pulse_output(FILE* f, const char* help, pulse_metric_fn fn) {
+    fprintf(f, "%s", help);
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        for (int j = 0; j < dev->channel_count; j++) {
+            channel_t* channel = dev->channels + j;
+            for (int k = 0; k < channel->output_count; k++) {
+                if (channel->outputs[k].type == O_PULSE)
+                    fn(f, (const pulse_data*)(channel->outputs[k].data));
+            }
+        }
+    }
+    for (int i = 0; i < mixer_count; i++) {
+        channel_t* channel = &mixers[i].channel;
+        for (int k = 0; k < channel->output_count; k++) {
+            if (channel->outputs[k].type == O_PULSE)
+                fn(f, (const pulse_data*)(channel->outputs[k].data));
+        }
+    }
+    fprintf(f, "\n");
+}
+
+static void output_pulse_metrics(FILE* f) {
+    for_each_pulse_output(f,
+                          "# HELP pulse_underflow_count Number of times a PulseAudio output stream has run dry.\n"
+                          "# TYPE pulse_underflow_count counter\n",
+                          [](FILE* out, const pulse_data* p) { fprintf(out, "pulse_underflow_count{stream=\"%s\"}\t%zu\n", p->stream_name, p->underflow_count); });
+    for_each_pulse_output(f,
+                          "# HELP pulse_latency_ms PulseAudio stream latency measured before the last write (-1 = unknown).\n"
+                          "# TYPE pulse_latency_ms gauge\n",
+                          [](FILE* out, const pulse_data* p) { fprintf(out, "pulse_latency_ms{stream=\"%s\"}\t%.1f\n", p->stream_name, p->latency_ms); });
+    for_each_pulse_output(f,
+                          "# HELP pulse_rate_match_ppm Current rate correction of a rate_match output.\n"
+                          "# TYPE pulse_rate_match_ppm gauge\n",
+                          [](FILE* out, const pulse_data* p) {
+                              if (p->rate_matcher)
+                                  fprintf(out, "pulse_rate_match_ppm{stream=\"%s\"}\t%.1f\n", p->stream_name, p->rate_matcher->ppm());
+                          });
+    for_each_pulse_output(f,
+                          "# HELP pulse_rate_match_integral_ppm Integral part of the rate correction (the learned clock offset).\n"
+                          "# TYPE pulse_rate_match_integral_ppm gauge\n",
+                          [](FILE* out, const pulse_data* p) {
+                              if (p->rate_matcher)
+                                  fprintf(out, "pulse_rate_match_integral_ppm{stream=\"%s\"}\t%.1f\n", p->stream_name, p->rate_matcher->integral_ppm());
+                          });
+    for_each_pulse_output(f,
+                          "# HELP pulse_rate_match_target_ms Stream latency a rate_match output holds.\n"
+                          "# TYPE pulse_rate_match_target_ms gauge\n",
+                          [](FILE* out, const pulse_data* p) {
+                              if (p->rate_matcher)
+                                  fprintf(out, "pulse_rate_match_target_ms{stream=\"%s\"}\t%.1f\n", p->stream_name, p->rate_matcher->target_ms());
+                          });
+    for_each_pulse_output(f,
+                          "# HELP pulse_rate_match_smoothed_ms Smoothed stream latency of a rate_match output.\n"
+                          "# TYPE pulse_rate_match_smoothed_ms gauge\n",
+                          [](FILE* out, const pulse_data* p) {
+                              if (p->rate_matcher)
+                                  fprintf(out, "pulse_rate_match_smoothed_ms{stream=\"%s\"}\t%.1f\n", p->stream_name, p->rate_matcher->smoothed_ms());
+                          });
+    for_each_pulse_output(f,
+                          "# HELP pulse_samples_inserted_count Samples added by rate matching.\n"
+                          "# TYPE pulse_samples_inserted_count counter\n",
+                          [](FILE* out, const pulse_data* p) {
+                              if (p->rate_matcher)
+                                  fprintf(out, "pulse_samples_inserted_count{stream=\"%s\"}\t%zu\n", p->stream_name, p->rate_matcher->inserted());
+                          });
+    for_each_pulse_output(f,
+                          "# HELP pulse_samples_dropped_count Samples dropped by rate matching.\n"
+                          "# TYPE pulse_samples_dropped_count counter\n",
+                          [](FILE* out, const pulse_data* p) {
+                              if (p->rate_matcher)
+                                  fprintf(out, "pulse_samples_dropped_count{stream=\"%s\"}\t%zu\n", p->stream_name, p->rate_matcher->dropped());
+                          });
+}
+#endif /* WITH_PULSEAUDIO */
+
 static void output_output_overruns(FILE* f) {
     fprintf(f,
             "# HELP output_overrun_count Number of times a device or mixer output has overrun.\n"
@@ -1023,6 +1102,9 @@ void write_stats_file(timeval* last_stats_write) {
     output_device_buffer_overflows(file);
     output_output_overruns(file);
     output_input_overruns(file);
+#ifdef WITH_PULSEAUDIO
+    output_pulse_metrics(file);
+#endif /* WITH_PULSEAUDIO */
 
     fclose(file);
 }
