@@ -47,6 +47,7 @@
 #include "filters.h"
 #include "input-common.h"  // input_t
 #include "logging.h"
+#include "rate_match.h"
 #include "squelch.h"
 
 #define ALIGNED32 __attribute__((aligned(32)))
@@ -181,6 +182,10 @@ struct pulse_data {
     pa_channel_map lmap, rmap;
     mix_modes mode;
     bool continuous;
+    int buffer_ms;              // requested stream latency in ms, 0 = server default
+    RateMatcher* rate_matcher;  // NULL unless rate_match is set
+    size_t underflow_count;
+    float latency_ms;  // measured before the last write, -1 = unknown
 };
 #endif /* WITH_PULSEAUDIO */
 

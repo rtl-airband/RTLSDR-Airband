@@ -156,6 +156,8 @@ SDR device (input-*.cpp)
 
 Device modes, the threading model, and the config format are documented in `src/CLAUDE.md` (loaded when working under `src/`).
 
+PulseAudio outputs with `continuous = true` can set `rate_match = true`: `RateMatcher` (`src/rate_match.cpp`) holds the stream latency steady against SDR/sound-server clock drift with a PI loop, adding or dropping one sample per batch via a windowed-sinc stretch. `buffer_ms` requests the stream's target latency. Both are reported in the stats file (`pulse_*` metrics).
+
 ### Unit Tests
 
-Tests use Google Test (fetched via CMake FetchContent). Test files in `src/test_*.cpp` cover filters, squelch, CTCSS, helper functions, and signal generation. `src/test_base_class.h` provides test utilities.
+Tests use Google Test (fetched via CMake FetchContent). Test files in `src/test_*.cpp` cover filters, squelch, CTCSS, helper functions, signal generation, and PulseAudio rate matching (`RateMatcher`, `src/rate_match.cpp`). `src/test_base_class.h` provides test utilities.

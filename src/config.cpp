@@ -273,6 +273,17 @@ static int parse_outputs(libconfig::Setting& outs, channel_t* channel, int i, in
 
             pulse_data* pdata = (pulse_data*)(channel->outputs[oo].data);
             pdata->continuous = outs[o].exists("continuous") ? (bool)(outs[o]["continuous"]) : false;
+            pdata->buffer_ms = outs[o].exists("buffer_ms") ? (int)(outs[o]["buffer_ms"]) : 0;
+            if (pdata->buffer_ms < 0) {
+                output_error(i, j, o, parsing_mixers, "buffer_ms must not be negative");
+            }
+            pdata->latency_ms = -1.0f;
+            if (outs[o].exists("rate_match") && (bool)(outs[o]["rate_match"])) {
+                if (!pdata->continuous) {
+                    output_error(i, j, o, parsing_mixers, "rate_match requires continuous = true");
+                }
+                pdata->rate_matcher = new RateMatcher((double)WAVE_BATCH / (double)WAVE_RATE);
+            }
             pdata->server = outs[o].exists("server") ? strdup(outs[o]["server"]) : NULL;
             pdata->name = outs[o].exists("name") ? strdup(outs[o]["name"]) : "rtl_airband";
             pdata->sink = outs[o].exists("sink") ? strdup(outs[o]["sink"]) : NULL;

@@ -61,6 +61,7 @@ void pulse_shutdown(pulse_data* pdata) {
 
 static void pulse_stream_underflow_cb(pa_stream*, void* userdata) {
     pulse_data* pdata = (pulse_data*)userdata;
+    pdata->underflow_count++;
     if (pdata->continuous)  // do not flood the logs on every squelch closing
         log(LOG_INFO, "pulse: %s: stream \"%s\": underflow\n", SERVER_IFNOTNULL(pdata->server), pdata->stream_name);
 }
@@ -101,12 +102,18 @@ static pa_stream* pulse_setup_stream(pulse_data* pdata, const pa_sample_spec* ss
     pa_stream_set_state_callback(stream, stream_state_cb, pdata);
     pa_stream_set_underflow_callback(stream, pulse_stream_underflow_cb, pdata);
     pa_stream_set_overflow_callback(stream, pulse_stream_overflow_cb, pdata);
+    pa_buffer_attr attr;
+    attr.maxlength = (uint32_t)-1;
+    attr.tlength = pdata->buffer_ms > 0 ? (uint32_t)pa_usec_to_bytes((pa_usec_t)pdata->buffer_ms * 1000, ss) : (uint32_t)-1;
+    attr.prebuf = (uint32_t)-1;
+    attr.minreq = (uint32_t)-1;
+    attr.fragsize = (uint32_t)-1;
     // Initially streams are corked (paused). For mono streams this is irrelevant,
     // but for stereo mixers it's required to keep left and right channels in sync.
     // Starting the left channel stream before the other stream from the sync pair is
     // set up causes the left channel stream to fail.
-    if (pa_stream_connect_playback(stream, pdata->sink, NULL, (pa_stream_flags_t)(PA_STREAM_INTERPOLATE_TIMING | PA_STREAM_ADJUST_LATENCY | PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE),
-                                   NULL, sync_stream) < 0) {
+    if (pa_stream_connect_playback(stream, pdata->sink, pdata->buffer_ms > 0 ? &attr : NULL,
+                                   (pa_stream_flags_t)(PA_STREAM_INTERPOLATE_TIMING | PA_STREAM_ADJUST_LATENCY | PA_STREAM_START_CORKED | PA_STREAM_AUTO_TIMING_UPDATE), NULL, sync_stream) < 0) {
         log(LOG_ERR, "pulse: %s: failed to connect stream \"%s\": %s\n", SERVER_IFNOTNULL(pdata->server), pdata->stream_name, pa_strerror(pa_context_errno(pdata->context)));
         goto fail;
     }
@@ -119,6 +126,9 @@ fail:
 }
 
 static void pulse_setup_streams(pulse_data* pdata) {
+    pdata->latency_ms = -1.0f;
+    if (pdata->rate_matcher)
+        pdata->rate_matcher->reset();
     const pa_sample_spec ss = {
 #if __cplusplus >= 199711L
         .format = PA_SAMPLE_FLOAT32LE, .rate = WAVE_RATE, .channels = 1
@@ -216,6 +226,7 @@ static int pulse_write_single_stream(pa_stream* stream, pulse_data* pdata, const
             log(LOG_INFO, "pulse: %s: exceeded max backlog for stream \"%s\", disconnecting\n", SERVER_IFNOTNULL(pdata->server), pdata->stream_name);
             goto end;
         }
+        pdata->latency_ms = (float)latency / 1000.0f;
         debug_bulk_print("pulse: %s: stream=\"%s\" lret=%d latency=%f ms\n", SERVER_IFNOTNULL(pdata->server), pdata->stream_name, lret, (float)latency / 1000.0f);
     }
     if (pa_stream_write(stream, data, len, NULL, 0LL, PA_SEEK_RELATIVE) < 0) {
@@ -229,7 +240,19 @@ end:
 }
 
 void pulse_write_stream(pulse_data* pdata, mix_modes mode, const float* data_left, const float* data_right, size_t len) {
+    float rm_left[WAVE_BATCH + 1], rm_right[WAVE_BATCH + 1];
     PA_LOOP_LOCK(mainloop);
+    if (pdata->rate_matcher && len == (size_t)WAVE_BATCH * sizeof(float)) {
+        int d = pdata->rate_matcher->step(pdata->latency_ms, WAVE_BATCH);
+        if (d != 0) {
+            len = RateMatcher::stretch(data_left, WAVE_BATCH, rm_left, d) * sizeof(float);
+            data_left = rm_left;
+            if (mode == MM_STEREO) {
+                RateMatcher::stretch(data_right, WAVE_BATCH, rm_right, d);
+                data_right = rm_right;
+            }
+        }
+    }
     if (!pdata->context || pa_context_get_state(pdata->context) != PA_CONTEXT_READY)
         goto end;
     if (pulse_write_single_stream(pdata->left, pdata, data_left, len, true) < 0)
