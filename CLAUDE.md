@@ -1093,9 +1093,30 @@ Large system test cases for manual runs can be kept outside the repo in `../RTLS
 
 ## Wiki Documentation
 
-User-facing documentation lives in a separate repo: https://github.com/rtl-airband/RTLSDR-Airband/wiki
+User-facing documentation lives in this fork's wiki, a separate git repo:
+`git@git.schmall.me:jschmall/RTLSDR-Airband.wiki.git` (Forgejo). The GitHub wiki
+(github.com/jschmall/RTLSDR-Airband/wiki) is a copy carried by the push mirror; never edit or
+push it directly. Upstream's wiki (github.com/rtl-airband/RTLSDR-Airband/wiki) is a different
+repo that this one merges from.
 
-Flag when code changes require wiki updates and provide suggested content — do not edit the wiki directly.
+- **Edit the fork wiki as part of fork changes.** A change that adds or changes a config key, a
+  control socket command, a stats metric, a `Features:` name or a CMake option isn't finished until
+  the relevant wiki page documents it (key name, type, default, range, first fork version). The
+  README's "Fork-Specific Features" section is the summary; the wiki pages carry the detail.
+- **Where things go:** device keys on `Configuring-<driver>-devices`, channel keys on
+  `Configuring-channels-for-*`, output keys on `Configuring-<type>-outputs`, globals on
+  `Configuring-Global-settings`, metrics on `Channel-usage-statistics`, control socket commands on
+  `Live-reconfiguration-via-control-socket`, build options on `Installation`. Larger features get
+  their own page (as `Automatic-PPM-correction`, `Device-health-status`,
+  `Cross-instance-mixer-input` do), listed in `_Sidebar.md` with "(fork)" and on `Home`'s
+  "This fork" list.
+- **Style:** match the existing pages (a Syntax block with optional keys commented out at their
+  defaults, then "Explanation of keywords"); mark fork-only keys **fork-only**.
+- **Links:** keep each `[[...]]` link on one line (one that wraps renders as raw text), and give a
+  link to a section a label (`[[Text|Page#anchor]]`).
+- **Upstream wiki changes:** merge upstream's wiki master into the fork wiki when bumping to a new
+  upstream release, keeping fork sections on conflict.
+- Edits to *upstream's* wiki are still only suggested, never made directly.
 
 ## Code Review Guidelines
 
