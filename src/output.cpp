@@ -143,6 +143,7 @@ void shout_setup(icecast_data* icecast, mix_modes mixmode) {
     if (ret == SHOUTERR_CONNECTED) {
         log(LOG_NOTICE, "Connected to %s:%d/%s\n", icecast->hostname, icecast->port, icecast->mountpoint);
         SLEEP(100);
+        icecast->in_long_delay = false;
         icecast->shout = shouttemp;
     } else {
         log(LOG_WARNING, "Could not connect to %s:%d/%s: %s\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_get_error(shouttemp));
@@ -597,9 +598,11 @@ void process_outputs(channel_t* channel, int cur_scan_freq) {
                 continue;
             }
 
-            if (shout_delay(icecast->shout) > 500) {
+            // Count delay events (transitions above the threshold), not frames sent while delayed.
+            bool long_delay = shout_delay(icecast->shout) > ICECAST_LONG_DELAY_MS;
+            if (long_delay && !icecast->in_long_delay)
                 icecast->long_delay_count++;
-            }
+            icecast->in_long_delay = long_delay;
 
             int ret = shout_send(icecast->shout, channel->outputs[k].lamebuf, mp3_bytes);
 
@@ -974,6 +977,9 @@ static void output_output_overruns(FILE* f) {
     fprintf(f, "\n");
 }
 
+#define XSTR(x) STR(x)
+#define STR(x) #x
+
 static void output_icecast_delay(FILE* f) {
     fprintf(f,
             "# HELP icecast_delay_ms Milliseconds of audio data queued for sending to Icecast.\n"
@@ -982,7 +988,7 @@ static void output_icecast_delay(FILE* f) {
     for (int i = 0; i < device_count; i++) {
         device_t* dev = devices + i;
         for (int j = 0; j < dev->channel_count; j++) {
-            channel_t* channel = devices[i].channels + j;
+            channel_t* channel = dev->channels + j;
             for (int k = 0; k < channel->output_count; k++) {
                 if (channel->outputs[k].type != O_ICECAST)
                     continue;
@@ -1015,14 +1021,14 @@ static void output_icecast_queuelen(FILE* f) {
     for (int i = 0; i < device_count; i++) {
         device_t* dev = devices + i;
         for (int j = 0; j < dev->channel_count; j++) {
-            channel_t* channel = devices[i].channels + j;
+            channel_t* channel = dev->channels + j;
             for (int k = 0; k < channel->output_count; k++) {
                 if (channel->outputs[k].type != O_ICECAST)
                     continue;
                 icecast_data* icecast = (icecast_data*)(channel->outputs[k].data);
                 if (icecast->shout == NULL)
                     continue;
-                fprintf(f, "icecast_queuelen_bytes{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_queuelen(icecast->shout));
+                fprintf(f, "icecast_queuelen_bytes{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zd\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_queuelen(icecast->shout));
             }
         }
     }
@@ -1034,7 +1040,7 @@ static void output_icecast_queuelen(FILE* f) {
             icecast_data* icecast = (icecast_data*)(mixer->channel.outputs[k].data);
             if (icecast->shout == NULL)
                 continue;
-            fprintf(f, "icecast_queuelen_bytes{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_queuelen(icecast->shout));
+            fprintf(f, "icecast_queuelen_bytes{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zd\n", icecast->hostname, icecast->port, icecast->mountpoint, shout_queuelen(icecast->shout));
         }
     }
     fprintf(f, "\n");
@@ -1042,17 +1048,19 @@ static void output_icecast_queuelen(FILE* f) {
 
 static void output_icecast_long_delay(FILE* f) {
     fprintf(f,
-            "# HELP icecast_long_delay_count Number of times shout_delay exceeded 500ms before sending.\n"
+            "# HELP icecast_long_delay_count Number of times shout_delay rose above " XSTR(ICECAST_LONG_DELAY_MS) "ms.\n"
             "# TYPE icecast_long_delay_count counter\n");
 
     for (int i = 0; i < device_count; i++) {
         device_t* dev = devices + i;
         for (int j = 0; j < dev->channel_count; j++) {
-            channel_t* channel = devices[i].channels + j;
+            channel_t* channel = dev->channels + j;
             for (int k = 0; k < channel->output_count; k++) {
                 if (channel->outputs[k].type != O_ICECAST)
                     continue;
                 icecast_data* icecast = (icecast_data*)(channel->outputs[k].data);
+                if (icecast->shout == NULL)
+                    continue;
                 fprintf(f, "icecast_long_delay_count{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, icecast->long_delay_count);
             }
         }
@@ -1063,6 +1071,8 @@ static void output_icecast_long_delay(FILE* f) {
             if (mixer->channel.outputs[k].type != O_ICECAST)
                 continue;
             icecast_data* icecast = (icecast_data*)(mixer->channel.outputs[k].data);
+            if (icecast->shout == NULL)
+                continue;
             fprintf(f, "icecast_long_delay_count{host=\"%s\",port=\"%d\",mount=\"%s\"}\t%zu\n", icecast->hostname, icecast->port, icecast->mountpoint, icecast->long_delay_count);
         }
     }
