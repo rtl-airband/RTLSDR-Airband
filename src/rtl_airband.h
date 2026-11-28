@@ -75,6 +75,7 @@
 #define WAVE_LEN 2 * WAVE_BATCH + AGC_EXTRA
 #define MP3_RATE 8000
 #define MAX_SHOUT_QUEUELEN 32768
+#define ICECAST_LONG_DELAY_MS 500
 #define TAG_QUEUE_LEN 16
 
 #define MIN_FFT_SIZE_LOG 8
@@ -126,6 +127,8 @@ struct icecast_data {
     const char* genre;
     const char* description;
     bool send_scan_freq_tags;
+    size_t long_delay_count;
+    bool in_long_delay;
     shout_t* shout;
 };
 
