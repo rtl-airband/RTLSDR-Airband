@@ -1,3 +1,0 @@
-#!/bin/bash
-
-find src/*.h src/*.cpp src/hello_fft/*.h src/hello_fft/*.c | xargs clang-format-14 -i

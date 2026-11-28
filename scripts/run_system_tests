@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." || exit; pwd)"
+
+"${REPO_ROOT}/scripts/build_all_combos"
+
+BUILD_AM_RELEASE="${REPO_ROOT}/builds/Release"
+BUILD_NFM_RELEASE="${REPO_ROOT}/builds/Release_nfm"
+
+# Locate uv — try PATH first, then the default install locations.
+if command -v uv &>/dev/null; then
+    UV="uv"
+elif [ -x "$HOME/.local/bin/uv" ]; then
+    UV="$HOME/.local/bin/uv"
+elif [ -x "$HOME/.cargo/bin/uv" ]; then
+    UV="$HOME/.cargo/bin/uv"
+else
+    echo "ERROR: uv not found. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    exit 1
+fi
+
+echo "=== Running system tests ==="
+cd "${REPO_ROOT}" || exit 1
+"$UV" run --no-group dev pytest system_tests/tests/ \
+    --binary "${BUILD_AM_RELEASE}/src/rtl_airband" \
+    --nfm-binary "${BUILD_NFM_RELEASE}/src/rtl_airband" \
+    --mode fast \
+    -n auto \
+    -v
+
+echo "=== System tests passed ==="

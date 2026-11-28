@@ -96,7 +96,7 @@ extern "C" void samplefft(sample_fft_arg* a, unsigned char* buffer, float* windo
 #define FFT_BATCH 1
 #endif /* WITH_BCM_VC */
 
-//#define AFC_LOGGING
+// #define AFC_LOGGING
 
 enum status { NO_SIGNAL = ' ', SIGNAL = '*', AFC_UP = '<', AFC_DOWN = '>' };
 enum ch_states { CH_DIRTY, CH_WORKING, CH_READY };
@@ -130,34 +130,45 @@ struct icecast_data {
     shout_t* shout;
 };
 
+struct freq_t;
+
 struct file_data {
+    // set once by config
+    enum output_type type;
     std::string basedir;
     std::string basename;
-    std::string suffix;
-    std::string file_path;
-    std::string file_path_tmp;
     bool dated_subdirectories;
+    std::string suffix;
     bool continuous;
     bool append;
     bool split_on_transmission;
     bool include_freq;
-    timeval open_time;
+    double split_min_file_time;
+    double split_max_file_time;
+    double split_max_idle_time;
+    bool split_include_transmission_start;
+    double split_tx_drop_shorter_than;
+
+    // set per output file
+    timeval transmission_start_time;
+    timeval file_open_time;
     timeval last_write_time;
+    int frequency;
+    freq_t* freq;  // channel frequency the file was opened on (scan mode can retune before it closes)
+    std::string file_path;
+    std::string file_path_tmp;
     FILE* f;
-    enum output_type type;
 };
 
 struct udp_stream_data {
     float* stereo_buffer;
-    size_t stereo_buffer_len;
+    size_t stereo_buffer_len;  // number of float elements, including both channels
 
     bool continuous;
     const char* dest_address;
     const char* dest_port;
 
     int send_socket;
-    struct sockaddr dest_sockaddr;
-    socklen_t dest_sockaddr_len;
 };
 
 #ifdef WITH_PULSEAUDIO
@@ -210,22 +221,32 @@ enum modulations {
 
 class Signal {
    public:
-    Signal(void) {
+    Signal(void) : pending_(false) {
         pthread_cond_init(&cond_, NULL);
         pthread_mutex_init(&mutex_, NULL);
     }
+    // pending_ is the predicate so a send() that races ahead of wait() is not
+    // lost: the next wait() returns immediately instead of blocking for the
+    // *next* send. Without this the demod thread overruns its first batch
+    // every time its initial send() arrives before the output thread reaches
+    // its first wait().
     void send(void) {
         pthread_mutex_lock(&mutex_);
+        pending_ = true;
         pthread_cond_signal(&cond_);
         pthread_mutex_unlock(&mutex_);
     }
     void wait(void) {
         pthread_mutex_lock(&mutex_);
-        pthread_cond_wait(&cond_, &mutex_);
+        while (!pending_) {
+            pthread_cond_wait(&cond_, &mutex_);
+        }
+        pending_ = false;
         pthread_mutex_unlock(&mutex_);
     }
 
    private:
+    bool pending_;
     pthread_cond_t cond_;
     pthread_mutex_t mutex_;
 };
@@ -240,6 +261,7 @@ struct freq_t {
     NotchFilter notch_filter;      // notch filter - good to remove CTCSS tones
     LowpassFilter lowpass_filter;  // lowpass filter, applied to I/Q after derotation, set at bandwidth/2 to remove out of band noise
     enum modulations modulation;
+    size_t split_tx_dropped_count;  // transmissions dropped for being shorter than split_tx_drop_shorter_than
 };
 struct channel_t {
     float wavein[WAVE_LEN];      // FFT output waveform
@@ -350,6 +372,12 @@ extern bool use_localtime;
 extern bool multiple_demod_threads;
 extern bool multiple_output_threads;
 extern char* stats_filepath;
+extern double stats_update_interval;
+extern double global_split_min_file_time;
+extern double global_split_max_file_time;
+extern double global_split_max_idle_time;
+extern bool global_split_include_transmission_start;
+extern double global_split_tx_drop_shorter_than;
 extern size_t fft_size, fft_size_log;
 extern int device_count, mixer_count;
 extern int shout_metadata_delay;
@@ -390,9 +418,11 @@ int parse_devices(libconfig::Setting& devs);
 int parse_mixers(libconfig::Setting& mx);
 
 // udp_stream.cpp
-bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len);
-void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len);
-void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len);
+// Lengths are in bytes per channel; stereo lengths must contain whole floats
+// and writes must fit the block size supplied to udp_stream_init().
+bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes);
+void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len_bytes);
+void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len_bytes);
 void udp_stream_shutdown(udp_stream_data* sdata);
 
 #ifdef WITH_PULSEAUDIO

@@ -121,13 +121,9 @@ fail:
 static void pulse_setup_streams(pulse_data* pdata) {
     const pa_sample_spec ss = {
 #if __cplusplus >= 199711L
-        .format = PA_SAMPLE_FLOAT32LE,
-        .rate = WAVE_RATE,
-        .channels = 1
+        .format = PA_SAMPLE_FLOAT32LE, .rate = WAVE_RATE, .channels = 1
 #else  // for g++ 4.6 (eg. Raspbian Wheezy)
-        PA_SAMPLE_FLOAT32LE,
-        WAVE_RATE,
-        1
+        PA_SAMPLE_FLOAT32LE, WAVE_RATE, 1
 #endif /* __cplusplus */
     };
     pa_channel_map_init_mono(&pdata->lmap);

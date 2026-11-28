@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Fail if any step fails.
+set -eo pipefail
+
 unameOut="$(uname -s)"
 
 echo "Running on ${unameOut} as ${USER}"
@@ -17,17 +20,15 @@ case "${unameOut}" in
             libfftw3-dev \
             librtlsdr-dev \
             libsoapysdr-dev \
-            libpulse-dev
+            libpulse-dev \
+            libopenblas0-pthread
 
-        (
-            git clone https://github.com/f4exb/libmirisdr-4
-            cd libmirisdr-4
-            mkdir build
-            cd build
-            cmake ../
-            sudo make install
-            sudo ldconfig
-        )
+        # Optional, for -DPROFILING=TRUE, install only if apt can resolve it.
+        if sudo apt-get install -y --dry-run libgoogle-perftools-dev >/dev/null 2>&1; then
+            sudo apt-get install -y libgoogle-perftools-dev
+        else
+            echo "libgoogle-perftools-dev is not installable here, profiling build will be skipped"
+        fi
         ;;
 
     Darwin*)
@@ -39,6 +40,7 @@ case "${unameOut}" in
             export HOMEBREW_NO_AUTO_UPDATE=1
             export HOMEBREW_NO_INSTALL_UPGRADE=1
             export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+            # shellcheck disable=SC2154  # ImageOS and ImageVersion are set by GitHub Actions
             echo "running ${ImageOS} vsersion ${ImageVersion}"
         else
             brew update
@@ -58,5 +60,5 @@ case "${unameOut}" in
 
     *)
         echo "Error: Machine not supported"
-        exit -1
+        exit 1
 esac

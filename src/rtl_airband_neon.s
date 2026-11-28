@@ -81,3 +81,5 @@ bne .a
 
 vpop {d4-d15}
 pop {r4-r12, pc}
+
+.section .note.GNU-stack,"",%progbits

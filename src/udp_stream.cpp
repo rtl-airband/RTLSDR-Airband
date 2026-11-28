@@ -26,10 +26,11 @@
 
 #include "rtl_airband.h"
 
-bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
+bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len_bytes) {
     // pre-allocate the stereo buffer
     if (mode == MM_STEREO) {
-        sdata->stereo_buffer_len = len * 2;
+        assert(len_bytes % sizeof(float) == 0);
+        sdata->stereo_buffer_len = (len_bytes / sizeof(float)) * 2;
         sdata->stereo_buffer = (float*)XCALLOC(sdata->stereo_buffer_len, sizeof(float));
     } else {
         sdata->stereo_buffer_len = 0;
@@ -37,7 +38,6 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
     }
 
     sdata->send_socket = -1;
-    sdata->dest_sockaddr_len = 0;
 
     // lookup address / port
     struct addrinfo hints, *result, *rptr;
@@ -67,8 +67,6 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
             continue;
         }
 
-        sdata->dest_sockaddr = *rptr->ai_addr;
-        sdata->dest_sockaddr_len = rptr->ai_addrlen;
         break;
     }
     freeaddrinfo(result);
@@ -79,25 +77,40 @@ bool udp_stream_init(udp_stream_data* sdata, mix_modes mode, size_t len) {
         return false;
     }
 
+    // Ensure the socket can queue one complete datagram, especially on macOS,
+    // where the default send buffer can be smaller than a stereo NFM packet.
+    const int datagram_bytes = static_cast<int>(mode == MM_STEREO ? 2 * len_bytes : len_bytes);
+    int sndbuf = 0;
+    socklen_t optlen = sizeof(sndbuf);
+    if (getsockopt(sdata->send_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &optlen) == 0 && sndbuf < datagram_bytes) {
+        if (setsockopt(sdata->send_socket, SOL_SOCKET, SO_SNDBUF, &datagram_bytes, sizeof(datagram_bytes)) == -1) {
+            log(LOG_WARNING, "udp_stream: could not raise send buffer to %d bytes: %s\n", datagram_bytes, strerror(errno));
+        }
+    }
+
     log(LOG_INFO, "udp_stream: sending %s 32-bit float at %d Hz to %s:%s\n", mode == MM_MONO ? "Mono" : "Stereo", WAVE_RATE, sdata->dest_address, sdata->dest_port);
     return true;
 }
 
-void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len) {
+void udp_stream_write(udp_stream_data* sdata, const float* data, size_t len_bytes) {
     if (sdata->send_socket != -1) {
-        // Send without blocking or checking for success
-        sendto(sdata->send_socket, data, len, MSG_DONTWAIT | MSG_NOSIGNAL, &sdata->dest_sockaddr, sdata->dest_sockaddr_len);
+        // The socket is connected during initialization, so use its peer.
+        // sendto() with an explicit destination on a connected socket fails
+        // with EISCONN on macOS.
+        send(sdata->send_socket, data, len_bytes, MSG_DONTWAIT | MSG_NOSIGNAL);
     }
 }
 
-void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len) {
+void udp_stream_write(udp_stream_data* sdata, const float* data_left, const float* data_right, size_t len_bytes) {
     if (sdata->send_socket != -1) {
-        assert(len * 2 <= sdata->stereo_buffer_len);
-        for (size_t i = 0; i < len; ++i) {
+        assert(len_bytes % sizeof(float) == 0);
+        const size_t sample_count = len_bytes / sizeof(float);
+        assert(sample_count <= sdata->stereo_buffer_len / 2);
+        for (size_t i = 0; i < sample_count; ++i) {
             sdata->stereo_buffer[2 * i] = data_left[i];
             sdata->stereo_buffer[2 * i + 1] = data_right[i];
         }
-        udp_stream_write(sdata, sdata->stereo_buffer, len * 2);
+        udp_stream_write(sdata, sdata->stereo_buffer, len_bytes * 2);
     }
 }
 

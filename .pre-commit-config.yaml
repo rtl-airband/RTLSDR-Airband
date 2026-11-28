@@ -3,12 +3,61 @@ repos:
     rev: v4.5.0
     hooks:
     - id: check-yaml
+    - id: check-json
+      exclude: ^\.vscode/launch\.json$  # JSONC format (JSON with comments) used by VS Code
     - id: end-of-file-fixer
     - id: trailing-whitespace
     - id: check-shebang-scripts-are-executable
+    - id: check-merge-conflict
+    - id: check-added-large-files
+    - id: check-case-conflict
+    - id: detect-private-key
 
-- repo: https://github.com/pre-commit/mirrors-clang-format
-  rev: v14.0.6
+- repo: https://github.com/shellcheck-py/shellcheck-py
+  rev: v0.10.0.1
+  hooks:
+  - id: shellcheck
+    exclude: ^init\.d/  # platform init scripts use OS-specific conventions shellcheck doesn't support
+
+- repo: local
   hooks:
   - id: clang-format
-    files: src/.*\.cpp|src/.*\.h
+    name: clang-format (C++ formatter)
+    language: system
+    entry: uv run clang-format -i
+    files: ^src/.*\.(cpp|h|c)$
+
+  - id: black
+    name: black (Python formatter)
+    language: system
+    entry: uv run black
+    types: [python]
+    files: ^system_tests/
+
+  - id: isort
+    name: isort (Python import sorter)
+    language: system
+    entry: uv run isort
+    types: [python]
+    files: ^system_tests/
+
+  - id: pylint
+    name: pylint (Python linter)
+    language: system
+    entry: uv run pylint
+    types: [python]
+    files: ^system_tests/
+
+  - id: run-tests
+    name: Run unit tests
+    entry: scripts/run_unit_tests
+    language: script
+    pass_filenames: false
+    files: \.(cpp|h)$|CMakeLists\.txt$|^scripts/
+
+  - id: run-system-tests
+    name: Run system tests
+    entry: scripts/run_system_tests
+    language: script
+    pass_filenames: false
+    files: \.(cpp|h)$|CMakeLists\.txt$|^scripts/|^system_tests/

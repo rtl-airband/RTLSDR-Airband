@@ -19,6 +19,8 @@
 
 #include "test_base_class.h"
 
+#include <libconfig.h++>
+
 #include "helper_functions.h"
 
 using namespace std;
@@ -164,4 +166,213 @@ TEST_F(HelperFunctionsTest, make_dated_subdirs_some_exist) {
     strptime("2010-3-8", "%Y-%m-%d", &time_struct);
     EXPECT_EQ(make_dated_subdirs(temp_dir, &time_struct), dir_through_month + "08");
     EXPECT_TRUE(dir_exists(dir_through_month + "08"));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_duration) {
+    EXPECT_TRUE(should_close_split_file(6001.0, 0.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_duration_at_max) {
+    EXPECT_FALSE(should_close_split_file(6000.0, 0.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_after_min_duration) {
+    EXPECT_TRUE(should_close_split_file(10.0, 0.6, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_at_max) {
+    EXPECT_FALSE(should_close_split_file(10.0, 0.5, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_before_min_duration) {
+    EXPECT_FALSE(should_close_split_file(0.5, 10.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_duration_at_min) {
+    EXPECT_FALSE(should_close_split_file(1.0, 10.0, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_no_idle) {
+    EXPECT_FALSE(should_close_split_file(10.0, 0.1, 1.0, 6000.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_time_past_max) {
+    EXPECT_TRUE(should_close_split_file_max_time(6001.0, 6000.0));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_time_at_max) {
+    EXPECT_FALSE(should_close_split_file_max_time(6000.0, 6000.0));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_max_time_under_max) {
+    EXPECT_FALSE(should_close_split_file_max_time(10.0, 6000.0));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_past_max_idle) {
+    EXPECT_TRUE(should_close_split_file_idle(10.0, 0.6, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_at_max_idle) {
+    EXPECT_FALSE(should_close_split_file_idle(10.0, 0.5, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_at_min_duration) {
+    EXPECT_FALSE(should_close_split_file_idle(1.0, 10.0, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_under_min_duration) {
+    EXPECT_FALSE(should_close_split_file_idle(0.5, 10.0, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, should_close_split_file_idle_ignores_max_time) {
+    EXPECT_FALSE(should_close_split_file_idle(6001.0, 0.1, 1.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_ok) {
+    EXPECT_TRUE(valid_split_file_times(1.0, 60.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_min_too_small) {
+    EXPECT_FALSE(valid_split_file_times(0.5, 60.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_max_not_greater) {
+    EXPECT_FALSE(valid_split_file_times(60.0, 60.0, 0.5));
+    EXPECT_FALSE(valid_split_file_times(60.0, 30.0, 0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_file_times_idle_not_positive) {
+    EXPECT_FALSE(valid_split_file_times(1.0, 60.0, 0.0));
+    EXPECT_FALSE(valid_split_file_times(1.0, 60.0, -1.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_stats_update_interval_positive) {
+    EXPECT_TRUE(valid_stats_update_interval(15.0));
+    EXPECT_TRUE(valid_stats_update_interval(0.5));
+}
+
+TEST_F(HelperFunctionsTest, valid_stats_update_interval_not_positive) {
+    EXPECT_FALSE(valid_stats_update_interval(0.0));
+    EXPECT_FALSE(valid_stats_update_interval(-1.0));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_int) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeInt);
+    s = 5;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double(s, &value));
+    EXPECT_DOUBLE_EQ(value, 5.0);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_float) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeFloat);
+    // 0.3 has no exact float representation, so this fails if the value is narrowed on the way out
+    s = 0.3;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double(s, &value));
+    EXPECT_DOUBLE_EQ(value, 0.3);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_bool_rejected) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeBoolean);
+    s = true;
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double(s, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_string_rejected) {
+    libconfig::Config config;
+    libconfig::Setting& s = config.getRoot().add("value", libconfig::Setting::TypeString);
+    s = "5.0";
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double(s, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_absent_uses_fallback) {
+    libconfig::Config config;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
+    EXPECT_DOUBLE_EQ(value, 0.5);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_present_overrides_fallback) {
+    libconfig::Config config;
+    config.getRoot().add("split_max_file_time", libconfig::Setting::TypeInt) = 1800;
+    double value = 0.0;
+    EXPECT_TRUE(setting_as_double_or(config.getRoot(), "split_max_file_time", 3600.0, &value));
+    EXPECT_DOUBLE_EQ(value, 1800.0);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_double_or_rejects_non_number) {
+    libconfig::Config config;
+    config.getRoot().add("split_max_idle_time", libconfig::Setting::TypeString) = "2.0";
+    double value = 0.0;
+    EXPECT_FALSE(setting_as_double_or(config.getRoot(), "split_max_idle_time", 0.5, &value));
+}
+
+TEST_F(HelperFunctionsTest, setting_as_bool_or_absent_uses_fallback) {
+    libconfig::Config config;
+    bool value = false;
+    EXPECT_TRUE(setting_as_bool_or(config.getRoot(), "split_include_transmission_start", true, &value));
+    EXPECT_TRUE(value);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_bool_or_present_overrides_fallback) {
+    libconfig::Config config;
+    config.getRoot().add("split_include_transmission_start", libconfig::Setting::TypeBoolean) = false;
+    bool value = true;
+    EXPECT_TRUE(setting_as_bool_or(config.getRoot(), "split_include_transmission_start", true, &value));
+    EXPECT_FALSE(value);
+}
+
+TEST_F(HelperFunctionsTest, setting_as_bool_or_rejects_non_bool) {
+    libconfig::Config config;
+    config.getRoot().add("int_value", libconfig::Setting::TypeInt) = 1;
+    config.getRoot().add("string_value", libconfig::Setting::TypeString) = "true";
+    bool value = false;
+    EXPECT_FALSE(setting_as_bool_or(config.getRoot(), "int_value", false, &value));
+    EXPECT_FALSE(setting_as_bool_or(config.getRoot(), "string_value", false, &value));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_disabled) {
+    EXPECT_TRUE(valid_split_tx_drop_shorter_than(0.0, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_below_max) {
+    EXPECT_TRUE(valid_split_tx_drop_shorter_than(59.9, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_at_max) {
+    EXPECT_FALSE(valid_split_tx_drop_shorter_than(60.0, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, valid_split_tx_drop_shorter_than_negative) {
+    EXPECT_FALSE(valid_split_tx_drop_shorter_than(-0.1, 60.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_short_whole_transmission) {
+    EXPECT_TRUE(should_drop_split_tx(true, false, 0.4, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_span_at_limit) {
+    EXPECT_FALSE(should_drop_split_tx(true, false, 1.0, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_long_transmission) {
+    EXPECT_FALSE(should_drop_split_tx(true, false, 3.0, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_disabled) {
+    EXPECT_FALSE(should_drop_split_tx(true, false, 0.0, 0.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_keeps_first_part_that_continues) {
+    EXPECT_FALSE(should_drop_split_tx(true, true, 0.4, 1.0));
+}
+
+TEST_F(HelperFunctionsTest, should_drop_split_tx_keeps_short_later_part) {
+    EXPECT_FALSE(should_drop_split_tx(false, false, 0.4, 1.0));
 }

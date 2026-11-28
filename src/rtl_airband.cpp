@@ -29,6 +29,9 @@
 #ifdef WITH_BCM_VC
 #include "hello_fft/gpu_fft.h"
 #include "hello_fft/mailbox.h"
+#else
+#include <memory>
+#include <vector>
 #endif /* WITH_BCM_VC */
 
 #include <fcntl.h>
@@ -56,6 +59,7 @@
 #include <ctime>
 #include <iostream>
 #include <libconfig.h++>
+#include "helper_functions.h"
 #include "input-common.h"
 #include "logging.h"
 #include "rtl_airband.h"
@@ -80,6 +84,12 @@ bool multiple_demod_threads = false;
 bool multiple_output_threads = false;
 bool log_scan_activity = false;
 char* stats_filepath = NULL;
+double stats_update_interval = 15.0;
+double global_split_min_file_time = 1.0;
+double global_split_max_file_time = 60.0 * 60.0;
+double global_split_max_idle_time = 0.5;
+bool global_split_include_transmission_start = false;
+double global_split_tx_drop_shorter_than = 0.0;
 size_t fft_size_log = DEFAULT_FFT_SIZE_LOG;
 size_t fft_size = 1 << fft_size_log;
 
@@ -181,13 +191,9 @@ class AFC {
     const status _prev_axcindicate;
 
 #ifdef WITH_BCM_VC
-    float square(const GPU_FFT_COMPLEX* fft_results, size_t index) {
-        return fft_results[index].re * fft_results[index].re + fft_results[index].im * fft_results[index].im;
-    }
+    float square(const GPU_FFT_COMPLEX* fft_results, size_t index) { return fft_results[index].re * fft_results[index].re + fft_results[index].im * fft_results[index].im; }
 #else
-    float square(const fftwf_complex* fft_results, size_t index) {
-        return fft_results[index][0] * fft_results[index][0] + fft_results[index][1] * fft_results[index][1];
-    }
+    float square(const fftwf_complex* fft_results, size_t index) { return fft_results[index][0] * fft_results[index][0] + fft_results[index][1] * fft_results[index][1]; }
 #endif /* WITH_BCM_VC */
 
     template <class FFT_RESULTS, int STEP>
@@ -349,9 +355,10 @@ void* demodulate(void* params) {
     // blackman 7
     // the whole matrix is computed
 #ifdef WITH_BCM_VC
+    // TODO: change this to std::vector<float> ?
     float ALIGNED32 window[fft_size * 2];
 #else
-    float ALIGNED32 window[fft_size];
+    std::unique_ptr<float[], decltype(&fftwf_free)> window(fftwf_alloc_real(fft_size), fftwf_free);
 #endif /* WITH_BCM_VC */
 
     const double a0 = 0.27105140069342f;
@@ -405,7 +412,6 @@ void* demodulate(void* params) {
         if (dev->input->state != INPUT_RUNNING) {
             if (dev->input->state == INPUT_FAILED) {
                 dev->input->state = INPUT_DISABLED;
-                disable_device_outputs(dev);
                 devices_running--;
             }
             device_num = next_device(demod_params, device_num);
@@ -720,6 +726,14 @@ static int count_devices_running() {
     return ret;
 }
 
+// read an optional top-level numeric setting, leaving *value at its default if absent
+static void parse_global_double(const Setting& root, const char* key, double* value) {
+    if (!setting_as_double_or(root, key, *value, value)) {
+        cerr << "Configuration error: " << key << " must be a number\n";
+        error();
+    }
+}
+
 int main(int argc, char* argv[]) {
 #ifdef WITH_PROFILING
     ProfilerStart("rtl_airband.prof");
@@ -843,6 +857,29 @@ int main(int argc, char* argv[]) {
             log_scan_activity = true;
         if (root.exists("stats_filepath"))
             stats_filepath = strdup(root["stats_filepath"]);
+        parse_global_double(root, "stats_update_interval", &stats_update_interval);
+        if (!valid_stats_update_interval(stats_update_interval)) {
+            cerr << "Configuration error: stats_update_interval must be greater than 0\n";
+            error();
+        }
+        if (root.exists("stats_update_interval") && !stats_filepath)
+            cerr << "Warning: stats_update_interval is ignored without stats_filepath\n";
+        parse_global_double(root, "split_min_file_time", &global_split_min_file_time);
+        parse_global_double(root, "split_max_file_time", &global_split_max_file_time);
+        parse_global_double(root, "split_max_idle_time", &global_split_max_idle_time);
+        if (!valid_split_file_times(global_split_min_file_time, global_split_max_file_time, global_split_max_idle_time)) {
+            cerr << "Configuration error: " << split_file_times_constraint << "\n";
+            error();
+        }
+        if (!setting_as_bool_or(root, "split_include_transmission_start", global_split_include_transmission_start, &global_split_include_transmission_start)) {
+            cerr << "Configuration error: split_include_transmission_start must be a boolean\n";
+            error();
+        }
+        parse_global_double(root, "split_tx_drop_shorter_than", &global_split_tx_drop_shorter_than);
+        if (!valid_split_tx_drop_shorter_than(global_split_tx_drop_shorter_than, global_split_max_file_time)) {
+            cerr << "Configuration error: " << split_tx_drop_shorter_than_constraint << "\n";
+            error();
+        }
 #ifdef NFM
         if (root.exists("tau"))
             alpha = ((int)root["tau"] == 0 ? 0.0f : exp(-1.0f / (WAVE_RATE * 1e-6 * (int)root["tau"])));
@@ -1122,11 +1159,6 @@ int main(int argc, char* argv[]) {
     }
     log(LOG_INFO, "Input threads closed\n");
 
-    for (int i = 0; i < device_count; i++) {
-        device_t* dev = devices + i;
-        disable_device_outputs(dev);
-    }
-
     if (mixer_count > 0) {
         log(LOG_INFO, "Closing mixer thread\n");
         pthread_join(mixer, NULL);
@@ -1136,6 +1168,11 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < output_thread_count; i++) {
         output_params[i].mp3_signal->send();
         pthread_join(output_threads[i], NULL);
+    }
+
+    for (int i = 0; i < device_count; i++) {
+        device_t* dev = devices + i;
+        disable_device_outputs(dev);
     }
 
     for (int i = 0; i < device_count; i++) {
